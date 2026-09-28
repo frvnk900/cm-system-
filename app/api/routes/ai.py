@@ -59,7 +59,8 @@ def _get_meta_access_token() -> str:
 
 def _build_page_request(
 	page_id: str, page_name: str, access_token: str, settings: RuntimeSettings
-) -> ClassificationRequest:
+) -> ClassificationRequest | None:
+	"""Collect recent posts and comments; None when there is nothing to classify."""
 	max_items = settings.max_comments_per_run
 	now = datetime.now(timezone.utc)
 	window_start = now - timedelta(days=settings.lookback_days)
@@ -136,6 +137,9 @@ def _build_page_request(
 		len(posts),
 		len(comments),
 	)
+	# ClassificationRequest needs at least one post and one comment.
+	if not posts or not comments:
+		return None
 	return ClassificationRequest(
 		location=page_name,
 		posts=posts,
@@ -225,7 +229,7 @@ def classify_page(
 		page_name = str(page.get("name") or page_id)
 		page_access_token = str(page.get("access_token") or access_token)
 		request = _build_page_request(page_id, page_name, page_access_token, settings)
-		if not request.comments:
+		if request is None:
 			return []
 		return _format_results(
 			_classify_new_comments(request, database, settings), request
