@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moderation Admin</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --text: #1c1f24; --muted: #667085; --line: #e4e7ec;
+    --accent: #2f6fed; --accent-text: #fff; --danger: #d92d20; --ok: #12b76a; --warn: #f79009;
+    --chip: #eef2f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --panel: #171a21; --text: #e6e8ec; --muted: #98a2b3; --line: #2a2f3a;
+      --accent: #5b8def; --chip: #232833;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 24px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 16px; margin: 0; flex: 1; }
+  nav { display: flex; gap: 4px; padding: 0 24px; background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; }
+  nav button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 12px 14px; color: var(--muted); font: inherit; cursor: pointer; white-space: nowrap; }
+  nav button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+  section.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+  section.card h2 { font-size: 15px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 16px; font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+  label { display: block; font-weight: 500; margin-bottom: 4px; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 3px; }
+  input, select { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+  button.btn { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
+  button.btn:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button.danger { color: var(--danger); }
+  button.small { padding: 4px 10px; font-size: 12px; }
+  .actions { display: flex; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  .toolbar select { width: auto; }
+  .toolbar .spacer { flex: 1; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+  td.num { font-variant-numeric: tabular-nums; }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--chip); font-size: 12px; white-space: nowrap; }
+  .sev-critical { background: var(--danger); color: #fff; }
+  .sev-high { background: var(--warn); color: #fff; }
+  .comment { max-width: 380px; white-space: pre-wrap; word-break: break-word; }
+  .muted { color: var(--muted); }
+  .switch { position: relative; width: 38px; height: 22px; display: inline-block; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch span { position: absolute; inset: 0; background: var(--line); border-radius: 999px; cursor: pointer; transition: .15s; }
+  .switch span::before { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .15s; }
+  .switch input:checked + span { background: var(--ok); }
+  .switch input:checked + span::before { transform: translateX(16px); }
+  textarea { width: 100%; min-height: 460px; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; resize: vertical; }
+  .kv { display: grid; grid-template-columns: 220px 1fr; gap: 8px 16px; }
+  .kv code { font-size: 13px; }
+  #login { max-width: 360px; margin: 12vh auto; }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--panel); padding: 10px 16px; border-radius: 8px; opacity: 0; transition: .2s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+  .hidden { display: none !important; }
+  .empty { padding: 32px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div id="login" class="hidden">
+  <section class="card">
+    <h2>Moderation Admin</h2>
+    <p class="sub">Enter the admin password from <code>.env</code>.</p>
+    <form id="login-form">
+      <input id="password" type="password" placeholder="Password" autocomplete="current-password" required>
+      <div class="actions"><button class="btn primary" type="submit">Log in</button></div>
+      <p id="login-error" class="hint" style="color: var(--danger)"></p>
+    </form>
+  </section>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <h1>Moderation Admin</h1>
+    <button class="btn small" id="logout">Log out</button>
+  </header>
+  <nav>
+    <button data-tab="settings" class="active">Settings</button>
+    <button data-tab="prompt">System prompt</button>
+    <button data-tab="pages">Locations</button>
+    <button data-tab="results">Flagged comments</button>
+    <button data-tab="environment">Keys &amp; server</button>
+  </nav>
+  <main>
+    <!-- Settings -->
+    <div data-panel="settings">
+      <form id="settings-form">
+        <section class="card">
+          <h2>AI</h2>
+          <p class="sub">Applied to the next classification run; no restart needed.</p>
+          <div class="grid">
+            <div>
+              <label for="provider_order">Providers</label>
+              <select id="provider_order">
+                <option value="openai,gemini">OpenAI, fall back to Gemini</option>
+                <option value="gemini,openai">Gemini, fall back to OpenAI</option>
+                <option value="openai">OpenAI only</option>
+                <option value="gemini">Gemini only</option>
+              </select>
+            </div>
+            <div><label for="openai_model">OpenAI model</label><input id="openai_model" required><div class="hint" data-default="openai_model"></div></div>
+            <div><label for="gemini_model">Gemini model</label><input id="gemini_model" required><div class="hint" data-default="gemini_model"></div></div>
+            <div>
+              <label for="gemini_reasoning_effort">Gemini thinking</label>
+              <select id="gemini_reasoning_effort">
+                <option>none</option><option>minimal</option><option>low</option><option>medium</option><option>high</option>
+              </select>
+              <div class="hint">More thinking uses more tokens.</div>
+            </div>
+            <div><label for="batch_size">Comments per AI call</label><input id="batch_size" type="number" min="1" max="50" required><div class="hint" data-default="batch_size"></div></div>
+            <div><label for="max_completion_tokens">Max output tokens</label><input id="max_completion_tokens" type="number" min="1000" max="65000" step="500" required><div class="hint" data-default="max_completion_tokens"></div></div>
+            <div><label for="ai_timeout_seconds">AI timeout (seconds)</label><input id="ai_timeout_seconds" type="number" min="10" max="600" required><div class="hint" data-default="ai_timeout_seconds"></div></div>
+          </div>
+        </section>
+        <section class="card">
+          <h2>Fetching</h2>
+          <p class="sub">Which Facebook posts and comments are pulled for each run.</p>
+          <div class="grid">
+            <div><label for="lookback_days">Scan posts from the last (days)</label><input id="lookback_days" type="number" min="1" max="30" required><div class="hint" data-default="lookback_days"></div></div>
+            <div><label for="max_comments_per_run">Max comments per page per run</label><input id="max_comments_per_run" type="number" min="1" max="500" required><div class="hint" data-default="max_comments_per_run"></div></div>
+          </div>
+        </section>
+        <div class="actions">
+          <button class="btn primary" type="submit">Save settings</button>
+          <button class="btn" type="button" id="reset-settings">Reset to defaults</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- System prompt -->
+    <div data-panel="prompt" class="hidden">
+      <section class="card">
+        <h2>System prompt</h2>
+        <p class="sub" id="prompt-status"></p>
+        <textarea id="prompt-text" spellcheck="false"></textarea>
+        <div class="hint" id="prompt-count"></div>
+        <div class="actions">
+          <button class="btn primary" id="prompt-save">Save as new version</button>
+          <button class="btn" id="prompt-load-default">Load built-in prompt</button>
+          <button class="btn danger" id="prompt-reset">Reset to built-in</button>
+        </div>
+      </section>
+      <section class="card">
+        <h2>Version history</h2>
+        <p class="sub">The newest version is the one in use. Load an older one, then save it to roll back.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Saved</th><th>Starts with</th><th></th></tr></thead>
+          <tbody id="prompt-versions"></tbody>
+        </table></div>
+      </section>
+    </div>
+
+    <!-- Locations -->
+    <div data-panel="pages" class="hidden">
+      <section class="card">
+        <div class="toolbar">
+          <div><h2>Locations</h2><p class="sub" style="margin:0">Disabled locations are refused by the classify endpoint and left out of <code>/pages/active</code>.</p></div>
+          <span class="spacer"></span>
+          <button class="btn" id="import-pages">Import pages from Meta</button>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Enabled</th><th>Location</th><th>Page ID</th><th>Location ID</th><th>Checked</th><th>Flagged</th><th></th></tr></thead>
+          <tbody id="pages-body"></tbody>
+        </table></div>
+      </section>
+    </div>
+
+    <!-- Results -->
+    <div data-panel="results" class="hidden">
+      <section class="card">
+        <div class="toolbar">
+          <select id="filter-page"><option value="">All locations</option></select>
+          <select id="filter-type">
+            <option value="">All types</option>
+            <option>threat</option><option>doxxing</option><option>hate_speech</option><option>harassment</option>
+            <option>defamation</option><option>profanity</option><option>misinformation</option><option>spam</option><option>negative_sentiment</option>
+          </select>
+          <span class="spacer"></span>
+          <button class="btn danger" id="clear-all">Clear entire cache</button>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Location</th><th>Type</th><th>Conf.</th><th>Comment</th><th>Reason</th><th></th></tr></thead>
+          <tbody id="results-body"></tbody>
+        </table></div>
+      </section>
+    </div>
+
+    <!-- Environment -->
+    <div data-panel="environment" class="hidden">
+      <section class="card">
+        <h2>API keys</h2>
+        <p class="sub">Change these in <code>.env</code> and restart the server.</p>
+        <div class="kv" id="secrets"></div>
+      </section>
+      <section class="card">
+        <h2>Server config</h2>
+        <p class="sub">Read from <code>.env</code> at startup.</p>
+        <div class="kv" id="server"></div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = '/admin/api';
+const $ = (sel) => document.querySelector(sel);
+const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const NUMBER_FIELDS = ['batch_size', 'max_completion_tokens', 'ai_timeout_seconds', 'lookback_days', 'max_comments_per_run'];
+const TEXT_FIELDS = ['openai_model', 'gemini_model', 'gemini_reasoning_effort'];
+
+function toast(message) {
+  const el = $('#toast');
+  el.textContent = message;
+  el.classList.add('show');
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(API + path, {
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  if (res.status === 401 && path !== '/login') { showLogin(); throw new Error('Not logged in'); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail = Array.isArray(data.detail) ? data.detail.map((d) => `${d.loc.at(-1)}: ${d.msg}`).join('; ') : data.detail;
+    throw new Error(detail || `Request failed (${res.status})`);
+  }
+  return data;
+}
+
+function showLogin() { $('#app').classList.add('hidden'); $('#login').classList.remove('hidden'); $('#password').focus(); }
+function showApp() { $('#login').classList.add('hidden'); $('#app').classList.remove('hidden'); loadTab('settings'); }
+
+$('#login-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  $('#login-error').textContent = '';
+  try {
+    await api('/login', { method: 'POST', body: JSON.stringify({ password: $('#password').value }) });
+    $('#password').value = '';
+    showApp();
+  } catch (error) { $('#login-error').textContent = error.message; }
+});
+
+$('#logout').addEventListener('click', async () => { await api('/logout', { method: 'POST' }); showLogin(); });
+
+// ---------- tabs ----------
+document.querySelectorAll('nav button').forEach((button) => button.addEventListener('click', () => loadTab(button.dataset.tab)));
+
+function loadTab(tab) {
+  document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('[data-panel]').forEach((p) => p.classList.toggle('hidden', p.dataset.panel !== tab));
+  ({ settings: loadSettings, prompt: loadPrompt, pages: loadPages, results: loadResults, environment: loadEnvironment })[tab]()
+    .catch((error) => toast(error.message));
+}
+
+// ---------- settings ----------
+async function loadSettings() {
+  const { settings, defaults } = await api('/settings');
+  fillSettings(settings);
+  document.querySelectorAll('[data-default]').forEach((el) => { el.textContent = `Default: ${defaults[el.dataset.default]}`; });
+}
+
+function fillSettings(settings) {
+  $('#provider_order').value = settings.provider_order.join(',');
+  [...NUMBER_FIELDS, ...TEXT_FIELDS].forEach((field) => { $('#' + field).value = settings[field]; });
+}
+
+$('#settings-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const body = { provider_order: $('#provider_order').value.split(',') };
+  NUMBER_FIELDS.forEach((field) => { body[field] = Number($('#' + field).value); });
+  TEXT_FIELDS.forEach((field) => { body[field] = $('#' + field).value.trim(); });
+  try {
+    fillSettings((await api('/settings', { method: 'PUT', body: JSON.stringify(body) })).settings);
+    toast('Settings saved');
+  } catch (error) { toast(error.message); }
+});
+
+$('#reset-settings').addEventListener('click', async () => {
+  if (!confirm('Reset all settings to the .env defaults?')) return;
+  fillSettings((await api('/settings/reset', { method: 'POST' })).settings);
+  toast('Settings reset');
+});
+
+// ---------- system prompt ----------
+const PROMPT_MAX = 20000;
+
+function renderPrompt(state) {
+  $('#prompt-text').value = state.content;
+  updatePromptCount();
+  $('#prompt-status').textContent = state.is_default
+    ? 'Using the built-in prompt. Saving creates the first custom version.'
+    : `Using the custom version saved ${new Date(state.updated_at).toLocaleString()}.`;
+  $('#prompt-versions').innerHTML = state.versions.length
+    ? state.versions.map((v, i) => `
+      <tr>
+        <td class="muted" style="white-space:nowrap">${esc(new Date(v.created_at).toLocaleString())}${i === 0 ? ' <span class="chip">in use</span>' : ''}</td>
+        <td class="comment">${esc(v.preview)}…</td>
+        <td><button class="btn small" data-version="${v.id}">Load</button></td>
+      </tr>`).join('')
+    : '<tr><td colspan="3" class="empty">No saved versions yet.</td></tr>';
+}
+
+function updatePromptCount() {
+  const length = $('#prompt-text').value.length;
+  $('#prompt-count').textContent = `${length.toLocaleString()} / ${PROMPT_MAX.toLocaleString()} characters`;
+  $('#prompt-count').style.color = length > PROMPT_MAX ? 'var(--danger)' : '';
+}
+
+async function loadPrompt() { renderPrompt(await api('/prompt')); }
+
+$('#prompt-text').addEventListener('input', updatePromptCount);
+
+$('#prompt-save').addEventListener('click', async () => {
+  try {
+    renderPrompt(await api('/prompt', { method: 'PUT', body: JSON.stringify({ content: $('#prompt-text').value }) }));
+    toast('Prompt saved');
+    if (confirm('Prompt saved. Re-check comments that were already classified with the old prompt?\n\nThis clears the cache, so every comment uses tokens again on the next run.')) {
+      const { deleted } = await api('/cache', { method: 'DELETE' });
+      toast(`Cache cleared (${deleted} comments)`);
+    }
+  } catch (error) { toast(error.message); }
+});
+
+$('#prompt-load-default').addEventListener('click', async () => {
+  $('#prompt-text').value = (await api('/prompt/default')).content;
+  updatePromptCount();
+  toast('Built-in prompt loaded into the editor (not saved yet)');
+});
+
+$('#prompt-reset').addEventListener('click', async () => {
+  if (!confirm('Delete all custom versions and go back to the built-in prompt?')) return;
+  renderPrompt(await api('/prompt/reset', { method: 'POST' }));
+  toast('Using the built-in prompt');
+});
+
+$('#prompt-versions').addEventListener('click', async (event) => {
+  const id = event.target.dataset.version;
+  if (!id) return;
+  $('#prompt-text').value = (await api(`/prompt/versions/${id}`)).content;
+  updatePromptCount();
+  toast('Version loaded into the editor. Save to make it active.');
+});
+
+// ---------- locations ----------
+let pagesCache = [];
+
+async function loadPages() {
+  pagesCache = await api('/pages');
+  const body = $('#pages-body');
+  if (!pagesCache.length) {
+    body.innerHTML = '<tr><td colspan="7" class="empty">No pages saved yet. Click "Import pages from Meta".</td></tr>';
+    return;
+  }
+  body.innerHTML = pagesCache.map((p) => `
+    <tr>
+      <td><label class="switch"><input type="checkbox" data-toggle="${esc(p.page_id)}" ${p.is_active ? 'checked' : ''}><span></span></label></td>
+      <td>${esc(p.name)}</td>
+      <td class="muted">${esc(p.page_id)}</td>
+      <td><input style="width:120px" type="number" data-location="${esc(p.page_id)}" value="${esc(p.location_id)}" placeholder="—"></td>
+      <td class="num">${p.checked}</td>
+      <td class="num">${p.flagged}</td>
+      <td><button class="btn small danger" data-clear="${esc(p.page_id)}">Clear cache</button></td>
+    </tr>`).join('');
+}
+
+$('#pages-body').addEventListener('change', async (event) => {
+  const el = event.target;
+  try {
+    if (el.dataset.toggle) {
+      await api(`/pages/${encodeURIComponent(el.dataset.toggle)}`, { method: 'PATCH', body: JSON.stringify({ is_active: el.checked }) });
+      toast(el.checked ? 'Location enabled' : 'Location disabled');
+    } else if (el.dataset.location) {
+      const value = el.value === '' ? null : Number(el.value);
+      await api(`/pages/${encodeURIComponent(el.dataset.location)}`, { method: 'PATCH', body: JSON.stringify({ location_id: value }) });
+      toast('Location ID saved');
+    }
+  } catch (error) { toast(error.message); loadPages(); }
+});
+
+$('#pages-body').addEventListener('click', async (event) => {
+  const pageId = event.target.dataset.clear;
+  if (!pageId || !confirm('Forget every checked comment for this location? They will be re-checked (and use tokens) on the next run.')) return;
+  const { deleted } = await api(`/cache?page_id=${encodeURIComponent(pageId)}`, { method: 'DELETE' });
+  toast(`Cleared ${deleted} comments`);
+  loadPages();
+});
+
+$('#import-pages').addEventListener('click', async () => {
+  try {
+    const { imported } = await api('/pages/import', { method: 'POST' });
+    toast(`Imported ${imported} pages`);
+    loadPages();
+  } catch (error) { toast(error.message); }
+});
+
+// ---------- results ----------
+async function loadResults() {
+  if (!pagesCache.length) pagesCache = await api('/pages');
+  const pageSelect = $('#filter-page');
+  const selected = pageSelect.value;
+  pageSelect.innerHTML = '<option value="">All locations</option>' +
+    pagesCache.map((p) => `<option value="${esc(p.page_id)}">${esc(p.name)}</option>`).join('');
+  pageSelect.value = selected;
+
+  const params = new URLSearchParams();
+  if (pageSelect.value) params.set('page_id', pageSelect.value);
+  if ($('#filter-type').value) params.set('type', $('#filter-type').value);
+  const rows = await api('/results?' + params);
+  const body = $('#results-body');
+  if (!rows.length) { body.innerHTML = '<tr><td colspan="6" class="empty">No flagged comments.</td></tr>'; return; }
+  body.innerHTML = rows.map((r) => `
+    <tr>
+      <td>${esc(r.location)}</td>
+      <td><span class="chip sev-${esc(r.severity)}">${esc(r.type)}</span></td>
+      <td class="num">${r.confidence == null ? '' : Math.round(r.confidence * 100) + '%'}</td>
+      <td class="comment">${esc(r.comment)}<div class="hint">${esc(r.author || '')}${r.comment_link ? ` · <a href="${esc(r.comment_link)}" target="_blank" rel="noopener">open</a>` : ''}</div></td>
+      <td class="comment muted">${esc(r.reason)}</td>
+      <td><button class="btn small" data-recheck="${esc(r.comment_id)}" title="Send this comment to the AI again on the next run">Re-check</button></td>
+    </tr>`).join('');
+}
+
+$('#filter-page').addEventListener('change', () => loadResults().catch((e) => toast(e.message)));
+$('#filter-type').addEventListener('change', () => loadResults().catch((e) => toast(e.message)));
+
+$('#results-body').addEventListener('click', async (event) => {
+  const commentId = event.target.dataset.recheck;
+  if (!commentId) return;
+  await api(`/results/${encodeURIComponent(commentId)}`, { method: 'DELETE' });
+  toast('Will be re-checked on the next run');
+  loadResults();
+});
+
+$('#clear-all').addEventListener('click', async () => {
+  if (!confirm('Forget ALL checked comments? Every comment will be re-checked (and use tokens) on the next run.')) return;
+  const { deleted } = await api('/cache', { method: 'DELETE' });
+  toast(`Cleared ${deleted} comments`);
+  loadResults();
+});
+
+// ---------- environment ----------
+async function loadEnvironment() {
+  const { secrets, server } = await api('/environment');
+  $('#secrets').innerHTML = secrets.map((s) => `
+    <div><code>${esc(s.name)}</code></div>
+    <div>${s.value ? `<span class="chip">${esc(s.value)}</span>` : '<span class="chip sev-critical">not set</span>'}</div>`).join('');
+  $('#server').innerHTML = server.map((s) => `<div><code>${esc(s.name)}</code></div><div>${esc(s.value)}</div>`).join('');
+}
+
+// ---------- boot ----------
+api('/me').then(showApp).catch(() => {});
+</script>
+</body>
+</html>
