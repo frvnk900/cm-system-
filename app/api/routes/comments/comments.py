@@ -1,4 +1,5 @@
 import logging
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -14,7 +15,7 @@ from app.services.get_comments_ import (
 	get_all_comments_from_page,
 	get_comment,
 )
-from app.services.get_pages_ import MetaAPIError, MetaAPIRequestError
+from app.services.get_pages_ import MetaAPIError, MetaAPIRequestError, get_page
 
 
 router = APIRouter(prefix="/comments", tags=["comments"])
@@ -105,6 +106,18 @@ def read_comment(
 		raise HTTPException(status_code=502, detail="Meta content could not be retrieved") from error
 
 
+def _fresh_page_token(page_id: str) -> str | None:
+	"""Page token derived from META_ACCESS_TOKEN now, so it can't be stale."""
+	user_token = os.getenv("META_ACCESS_TOKEN")
+	if not user_token:
+		return None
+	try:
+		return get_page(page_id, user_token).get("access_token")
+	except MetaAPIError as error:
+		logger.warning("Could not get a fresh page token for %s: %s", page_id, error)
+		return None
+
+
 @router.delete("/{comment_id}", response_model=dict)
 def remove_comment(
 	comment_id: str,
@@ -114,7 +127,8 @@ def remove_comment(
 	"""Delete one comment by its Meta comment id."""
 	try:
 		if page_id:
-			return delete_comment(comment_id, _get_tokens(database, page_id)[0])
+			token = _fresh_page_token(page_id) or _get_tokens(database, page_id)[0]
+			return delete_comment(comment_id, token)
 		for page_access_token in _get_tokens(database, None):
 			try:
 				return delete_comment(comment_id, page_access_token)
@@ -122,4 +136,8 @@ def remove_comment(
 				continue
 		raise HTTPException(status_code=404, detail="Comment was not found")
 	except MetaAPIError as error:
-		raise HTTPException(status_code=502, detail="Meta content could not be retrieved") from error
+		logger.warning("Meta comment delete failed: %s", error)
+		# Facebook's reason (expired token, missing permission, already deleted…).
+		raise HTTPException(
+			status_code=502, detail=f"Facebook refused the delete: {error}"
+		) from error
