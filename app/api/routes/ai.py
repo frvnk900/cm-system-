@@ -25,7 +25,7 @@ from app.services.ai_classification import (
 	AIProviderError,
 	classify_comments,
 )
-from app.services.get_comments_ import get_all_comments_from_a_post
+from app.services.get_comments_ import get_all_comments_from_a_post, parse_meta_time
 from app.services.get_pages_ import MetaAPIError, MetaAPIRequestError, get_page
 from app.services.get_posts_ import get_page_posts
 
@@ -34,6 +34,8 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/ai", tags=["ai"])
+# Upper bound on posts read per page per run (newest first).
+MAX_POSTS_SCANNED = 100
 SEVERITY_BY_CATEGORY = {
 	"threat": "critical",
 	"doxxing": "critical",
@@ -60,80 +62,86 @@ def _get_meta_access_token() -> str:
 def _build_page_request(
 	page_id: str, page_name: str, access_token: str, settings: RuntimeSettings
 ) -> ClassificationRequest | None:
-	"""Collect recent posts and comments; None when there is nothing to classify."""
+	"""Collect comments written recently, on any post from the post window.
+
+	Comments are selected by when they were written (``lookback_days``), not by
+	the age of their post, so new comments on older posts are still checked.
+	Returns None when there is nothing to classify.
+	"""
 	max_items = settings.max_comments_per_run
 	now = datetime.now(timezone.utc)
-	window_start = now - timedelta(days=settings.lookback_days)
+	comment_window_start = now - timedelta(days=settings.lookback_days)
+	post_window_start = now - timedelta(days=settings.post_lookback_days)
 	posts_from_meta = get_page_posts(
 		page_id,
 		access_token,
-		max_items=max_items,
-		since=int(window_start.timestamp()),
+		max_items=MAX_POSTS_SCANNED,
+		since=int(post_window_start.timestamp()),
 		until=int(now.timestamp()),
 	)
 	logger.info("Meta posts fetched: posts=%d", len(posts_from_meta))
-	posts: list[PostContext] = []
-	comments: list[CommentContext] = []
+	posts_by_id: dict[str, PostContext] = {}
+	# (written at, comment, post id) for every comment inside the window.
+	recent: list[tuple[datetime, dict, str]] = []
 
 	for post_number, post in enumerate(posts_from_meta, start=1):
-		if len(comments) >= max_items:
-			break
-		created_time = post.get("created_time")
-		if not created_time:
+		created_at = parse_meta_time(post.get("created_time"))
+		if post.get("id") is None or created_at is None:
 			continue
-		try:
-			created_at = datetime.fromisoformat(created_time.replace("Z", "+00:00"))
-		except (AttributeError, ValueError):
-			logger.warning("Skipping post with invalid created_time")
+		if not post_window_start <= created_at <= now:
 			continue
-		created_at_utc = created_at.astimezone(timezone.utc)
-		if not window_start <= created_at_utc <= now:
-			continue
-		post_id = str(post["id"]) if post.get("id") is not None else None
-		posts.append(
-			PostContext(
+		post_id = str(post["id"])
+		new_comments = get_all_comments_from_a_post(
+			post_id, access_token, max_items=max_items, newer_than=comment_window_start
+		)
+		for comment in new_comments:
+			written_at = parse_meta_time(comment.get("created_time"))
+			if written_at is not None and written_at >= comment_window_start:
+				recent.append((written_at, comment, post_id))
+		if new_comments:
+			posts_by_id[post_id] = PostContext(
 				post_id=post_id,
 				page_id=page_id,
 				body=str(post.get("message") or ""),
 			)
-		)
-		if post_id is None:
-			continue
-
-		remaining_comments = max_items - len(comments)
-		for comment in get_all_comments_from_a_post(
-			post_id, access_token, max_items=remaining_comments
-		):
-			comment_author = comment.get("from")
-			comments.append(
-				CommentContext(
-					comment_id=(
-						str(comment["id"])
-						if comment.get("id") is not None
-						else None
-					),
-					post_id=post_id,
-					page_id=page_id,
-					author=(
-						str(comment_author.get("name"))
-						if isinstance(comment_author, dict)
-						and comment_author.get("name") is not None
-						else None
-					),
-					body=str(comment.get("message") or ""),
-					comment_link=str(comment.get("permalink_url") or ""),
-					time_posted=str(comment.get("created_time") or ""),
-				)
-			)
 		if post_number == 1 or post_number % 10 == 0:
 			logger.info(
-				"Meta comment collection progress: posts_processed=%d comments=%d",
+				"Meta comment collection progress: posts_scanned=%d new_comments=%d",
 				post_number,
-				len(comments),
+				len(recent),
 			)
 
+	# Newest comments first, across all posts, up to the per-run limit.
+	recent.sort(key=lambda item: item[0], reverse=True)
+	comments: list[CommentContext] = []
+	for _, comment, post_id in recent[:max_items]:
+		comment_author = comment.get("from")
+		comments.append(
+			CommentContext(
+				comment_id=(
+					str(comment["id"]) if comment.get("id") is not None else None
+				),
+				post_id=post_id,
+				page_id=page_id,
+				author=(
+					str(comment_author.get("name"))
+					if isinstance(comment_author, dict)
+					and comment_author.get("name") is not None
+					else None
+				),
+				body=str(comment.get("message") or ""),
+				comment_link=str(comment.get("permalink_url") or ""),
+				time_posted=str(comment.get("created_time") or ""),
+			)
+		)
+	# Only posts that still have a selected comment are sent as context.
+	used_post_ids = {comment.post_id for comment in comments}
+	posts = [post for post_id, post in posts_by_id.items() if post_id in used_post_ids]
+
 	logger.info(
-		"Meta comment collection completed: posts=%d comments=%d",
+		"Meta comment collection completed: posts_scanned=%d posts_with_new_comments=%d "
+		"new_comments=%d",
+		len(posts_from_meta),
 		len(posts),
 		len(comments),
 	)

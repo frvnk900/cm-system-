@@ -125,10 +125,11 @@
         </section>
         <section class="card">
           <h2>Fetching</h2>
-          <p class="sub">Which Facebook posts and comments are pulled for each run.</p>
+          <p class="sub">Comments are picked by when they were written, so new comments on older posts are still checked.</p>
           <div class="grid">
-            <div><label for="lookback_days">Scan posts from the last (days)</label><input id="lookback_days" type="number" min="1" max="30" required><div class="hint" data-default="lookback_days"></div></div>
-            <div><label for="max_comments_per_run">Max comments per page per run</label><input id="max_comments_per_run" type="number" min="1" max="500" required><div class="hint" data-default="max_comments_per_run"></div></div>
+            <div><label for="lookback_days">Check comments written in the last (days)</label><input id="lookback_days" type="number" min="1" max="30" required><div class="hint" data-default="lookback_days"></div></div>
+            <div><label for="post_lookback_days">Look for them on posts from the last (days)</label><input id="post_lookback_days" type="number" min="1" max="365" required><div class="hint" data-default="post_lookback_days"></div><div class="hint">Comments on posts older than this are missed. Higher means more Facebook requests per run, not more AI tokens.</div></div>
+            <div><label for="max_comments_per_run">Max new comments per page per run</label><input id="max_comments_per_run" type="number" min="1" max="500" required><div class="hint" data-default="max_comments_per_run"></div><div class="hint">Newest first.</div></div>
           </div>
         </section>
         <div class="actions">
@@ -218,7 +219,7 @@
 const API = '/admin/api';
 const $ = (sel) => document.querySelector(sel);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const NUMBER_FIELDS = ['batch_size', 'max_completion_tokens', 'ai_timeout_seconds', 'lookback_days', 'max_comments_per_run'];
+const NUMBER_FIELDS = ['batch_size', 'max_completion_tokens', 'ai_timeout_seconds', 'lookback_days', 'post_lookback_days', 'max_comments_per_run'];
 const TEXT_FIELDS = ['openai_model', 'gemini_model', 'gemini_reasoning_effort'];
 
 function toast(message) {

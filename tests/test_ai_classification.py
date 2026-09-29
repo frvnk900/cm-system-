@@ -106,13 +106,14 @@ def test_classification_endpoint_collects_page_content(monkeypatch):
 	monkeypatch.setattr(
 		ai,
 		"get_all_comments_from_a_post",
-		lambda post_id, token, max_items=None: (
+		lambda post_id, token, max_items=None, newer_than=None: (
 			comment_tokens.append(token)
 			or [
 				{
 					"id": "comment_1",
 					"message": "This is bad",
 					"from": {"name": "A"},
+					"created_time": recent_post_time,
 				}
 			]
 		),

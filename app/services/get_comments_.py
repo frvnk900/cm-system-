@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -15,10 +16,29 @@ from app.services.get_posts_ import get_page_posts
 COMMENT_FIELDS = "id,message,from,created_time,attachment,parent,permalink_url"
 
 
+def parse_meta_time(value: Any) -> datetime | None:
+	"""Parse a Graph API timestamp such as 2026-09-29T10:45:38+0000."""
+	if not value:
+		return None
+	try:
+		return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(
+			timezone.utc
+		)
+	except ValueError:
+		return None
+
+
 def get_all_comments_from_a_post(
-	post_id: str, page_access_token: str, max_items: int | None = None
+	post_id: str,
+	page_access_token: str,
+	max_items: int | None = None,
+	newer_than: datetime | None = None,
 ) -> list[dict[str, Any]]:
-	"""Return every comment on a post, following Graph API pagination."""
+	"""Return comments on a post, following Graph API pagination.
+
+	With ``newer_than``, comments are read newest first and reading stops at
+	the first comment written before that time.
+	"""
 	comments: list[dict[str, Any]] = []
 	url: str | None = f"{META_GRAPH_URL}/{post_id}/comments"
 	params: dict[str, Any] | None = {
@@ -26,6 +46,8 @@ def get_all_comments_from_a_post(
 		"fields": COMMENT_FIELDS,
 		"limit": 100,
 	}
+	if newer_than is not None:
+		params["order"] = "reverse_chronological"
 
 	with httpx.Client(timeout=META_HTTP_TIMEOUT) as client:
 		seen_urls: set[str] = set()
@@ -36,9 +58,14 @@ def get_all_comments_from_a_post(
 			seen_urls.add(url)
 			page_count += 1
 			data = _graph_get(client, url, params)
-			comments.extend(data.get("data", []))
-			if max_items is not None and len(comments) >= max_items:
-				return comments[:max_items]
+			for comment in data.get("data", []):
+				if newer_than is not None:
+					created_at = parse_meta_time(comment.get("created_time"))
+					if created_at is not None and created_at < newer_than:
+						return comments
+				comments.append(comment)
+				if max_items is not None and len(comments) >= max_items:
+					return comments
 			url = data.get("paging", {}).get("next")
 			params = None
 

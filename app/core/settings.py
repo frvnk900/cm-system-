@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import AliasChoices, BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -53,8 +53,10 @@ class RuntimeSettings(BaseModel):
 	batch_size: int = Field(ge=1, le=50)
 	max_completion_tokens: int = Field(ge=1000, le=65000)
 
-	# Fetching
+	# Fetching: comments written in the last `lookback_days` are checked,
+	# found on posts published in the last `post_lookback_days`.
 	lookback_days: int = Field(ge=1, le=30)
+	post_lookback_days: int = Field(default=30, ge=1, le=365)
 	max_comments_per_run: int = Field(ge=1, le=500)
 
 	@field_validator("provider_order")
@@ -63,6 +65,15 @@ class RuntimeSettings(BaseModel):
 		if len(set(value)) != len(value):
 			raise ValueError("each provider can appear only once")
 		return value
+
+	@model_validator(mode="after")
+	def _post_window_covers_comments(self) -> "RuntimeSettings":
+		if self.post_lookback_days < self.lookback_days:
+			raise ValueError(
+				"post_lookback_days must be at least lookback_days "
+				"(a comment can't be older than its post)"
+			)
+		return self
 
 
 def default_runtime_settings() -> RuntimeSettings:
@@ -76,5 +87,6 @@ def default_runtime_settings() -> RuntimeSettings:
 		batch_size=10,
 		max_completion_tokens=8000,
 		lookback_days=2,
+		post_lookback_days=30,
 		max_comments_per_run=50,
 	)
