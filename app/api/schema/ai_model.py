@@ -68,3 +68,40 @@ class ClassificationResult(ClassificationOutput):
 
 class ClassificationBatch(BaseModel):
 	results: list[ClassificationOutput]
+
+
+Sentiment = Literal["positive", "neutral", "negative"]
+
+
+class SentimentOutput(BaseModel):
+	"""One comment's sentiment, as produced by the model."""
+
+	comment_id: str
+	sentiment: Sentiment
+	confidence: float = Field(ge=0.0, le=1.0)
+	reason: str = Field(min_length=1, max_length=300)
+
+
+class SentimentBatch(BaseModel):
+	results: list[SentimentOutput]
+
+
+class CommentSentiment(BaseModel):
+	"""A comment with its sentiment, as returned by the API.
+
+	``sentiment`` is "unknown" when the AI could not classify it this run.
+	Delete it with DELETE /comments/{comment_id}?page_id={page_id}.
+	"""
+
+	comment_id: str
+	post_id: str | None = None
+	page_id: str | None = None
+	location: str
+	platform: str = "facebook"
+	sentiment: Literal["positive", "neutral", "negative", "unknown"]
+	confidence: float = 0.0
+	reason: str = ""
+	comment: str = ""
+	author: str = ""
+	comment_link: str = ""
+	time_posted: str = ""

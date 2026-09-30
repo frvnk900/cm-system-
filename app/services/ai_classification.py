@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
-from typing import Any, TypedDict
+from typing import Any, TypedDict, TypeVar
 
 from langgraph.graph import END, START, StateGraph
+from pydantic import BaseModel
 from openai import (
 	APIConnectionError,
 	APIStatusError,
@@ -28,6 +29,7 @@ from app.services.prompt.system_prompt import SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+ParsedT = TypeVar("ParsedT", bound=BaseModel)
 
 
 class AIConfigurationError(Exception):
@@ -95,21 +97,21 @@ def _providers(settings: RuntimeSettings) -> list[_Provider]:
 	return [available[name] for name in settings.provider_order]
 
 
-def _classify_with(
-	provider: _Provider, state: ClassificationState
-) -> list[ClassificationResult]:
+def structured_completion(
+	provider: _Provider,
+	settings: RuntimeSettings,
+	system_prompt: str,
+	user_content: str,
+	response_format: type[ParsedT],
+	task: str,
+) -> ParsedT:
+	"""Ask one provider for output matching ``response_format``."""
 	name = provider["name"]
-	settings = state["settings"]
 	api_key = getattr(get_settings(), provider["key_env"].lower())
 	if not api_key:
 		raise AIConfigurationError(f"{provider['key_env']} is not configured")
 
-	logger.info(
-		"%s classification request started: model=%s comments=%d",
-		name,
-		provider["model"],
-		len(state["request"].comments),
-	)
+	logger.info("%s %s request started: model=%s", name, task, provider["model"])
 	client = OpenAI(
 		api_key=api_key,
 		base_url=provider["base_url"],
@@ -119,15 +121,15 @@ def _classify_with(
 		completion = client.chat.completions.parse(
 			model=provider["model"],
 			messages=[
-				{"role": "system", "content": state.get("system_prompt") or SYSTEM_PROMPT},
-				{"role": "user", "content": state["prepared_input"]},
+				{"role": "system", "content": system_prompt},
+				{"role": "user", "content": user_content},
 			],
-			response_format=ClassificationBatch,
+			response_format=response_format,
 			max_completion_tokens=settings.max_completion_tokens,
 			**provider["extra_params"],
 		)
 	except LengthFinishReasonError as error:
-		logger.warning("%s classification output hit the token limit", name)
+		logger.warning("%s %s output hit the token limit", name, task)
 		raise AIOutputError("The model response was cut off by the token limit") from error
 	except AuthenticationError as error:
 		logger.error("%s authentication failed; check %s", name, provider["key_env"])
@@ -138,31 +140,31 @@ def _classify_with(
 		APIConnectionError,
 		APIStatusError,
 	) as error:
-		logger.warning("%s classification request failed: %s", name, type(error).__name__)
+		logger.warning("%s %s request failed: %s", name, task, type(error).__name__)
 		raise AIProviderError("The classification provider is temporarily unavailable") from error
 
 	message = completion.choices[0].message
 	if message.refusal or message.parsed is None:
-		logger.warning("%s classification returned no usable structured output", name)
+		logger.warning("%s %s returned no usable structured output", name, task)
 		raise AIOutputError("The model did not return a valid classification")
-
-	logger.info(
-		"%s classification response received: results=%d",
-		name,
-		len(message.parsed.results),
-	)
-	return [
-		ClassificationResult(**output.model_dump())
-		for output in message.parsed.results
-	]
+	return message.parsed
 
 
-def _classify_input(state: ClassificationState) -> dict[str, list[ClassificationResult]]:
-	providers = _providers(state["settings"])
+def complete_with_fallback(
+	settings: RuntimeSettings,
+	system_prompt: str,
+	user_content: str,
+	response_format: type[ParsedT],
+	task: str,
+) -> ParsedT:
+	"""Try each provider in the configured order until one answers."""
+	providers = _providers(settings)
 	for position, provider in enumerate(providers):
 		is_last = position == len(providers) - 1
 		try:
-			return {"results": _classify_with(provider, state)}
+			return structured_completion(
+				provider, settings, system_prompt, user_content, response_format, task
+			)
 		except (AIConfigurationError, AIProviderError) as error:
 			if is_last:
 				raise
@@ -173,6 +175,25 @@ def _classify_input(state: ClassificationState) -> dict[str, list[Classification
 				providers[position + 1]["name"],
 			)
 	raise AIConfigurationError("No classification provider is configured")
+
+
+def _classify_input(state: ClassificationState) -> dict[str, list[ClassificationResult]]:
+	logger.info(
+		"Classification batch: comments=%d", len(state["request"].comments)
+	)
+	batch = complete_with_fallback(
+		state["settings"],
+		state.get("system_prompt") or SYSTEM_PROMPT,
+		state["prepared_input"],
+		ClassificationBatch,
+		"classification",
+	)
+	logger.info("Classification response received: results=%d", len(batch.results))
+	return {
+		"results": [
+			ClassificationResult(**output.model_dump()) for output in batch.results
+		]
+	}
 
 
 def _validate_results(state: ClassificationState) -> dict[str, list[ClassificationResult]]:

@@ -30,11 +30,17 @@ from app.api.schema import moderation_model  # noqa: E402,F401
 from app.api.schema import classified_comment_model  # noqa: E402,F401
 from app.api.schema import app_settings_model  # noqa: E402,F401
 from app.api.schema import system_prompt_model  # noqa: E402,F401
+from app.api.schema import comment_sentiment_model  # noqa: E402,F401
 
 
 # Serverless instances should not hold pooled connections; Supabase's
-# pooler (port 6543) does the pooling.
-engine = create_engine(DATABASE_URL, poolclass=NullPool)
+# pooler (port 6543) does the pooling. The pooler shares server connections
+# between clients, so psycopg's automatic prepared statements must be off.
+engine = create_engine(
+	DATABASE_URL,
+	poolclass=NullPool,
+	connect_args={"prepare_threshold": None},
+)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 

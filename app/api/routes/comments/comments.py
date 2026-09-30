@@ -1,14 +1,27 @@
 import logging
 import os
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.db.app_settings_ import load_runtime_settings
+from app.api.db.comment_sentiments_ import load_sentiments, save_sentiments
 from app.api.db.db import get_db
 from app.api.db.page_access_ import (
 	get_all_page_access_tokens,
 	get_page_access_token,
 )
+from app.api.routes.ai import _build_page_request, _get_meta_access_token
+from app.api.schema.ai_model import CommentSentiment
+from app.api.schema.pages_model import Page
+from app.services.ai_classification import (
+	AIConfigurationError,
+	AIOutputError,
+	AIProviderError,
+)
+from app.services.sentiment import classify_sentiment
 from app.services.get_comments_ import (
 	delete_comment,
 	get_all_comments_from_a_post,
@@ -65,6 +78,100 @@ def list_page_comments(
 	except MetaAPIError as error:
 		logger.warning("Meta page comment retrieval failed: %s", error)
 		raise HTTPException(status_code=502, detail="Meta content could not be retrieved") from error
+
+
+@router.get("/page/{page_id}/sentiment", response_model=list[CommentSentiment])
+def list_page_comment_sentiment(
+	page_id: str,
+	sentiment: Literal["positive", "neutral", "negative", "unknown"] | None = Query(
+		None, description="Only return comments with this sentiment"
+	),
+	database: Session = Depends(get_db),
+) -> list[CommentSentiment]:
+	"""Return recent comments (positive and negative), each labelled by the AI.
+
+	Uses the same comment window as moderation (admin settings). Sentiments are
+	cached, so a comment is only sent to the AI once. Any returned comment can
+	be deleted with DELETE /comments/{comment_id}?page_id={page_id}.
+	"""
+	access_token = _get_meta_access_token()
+	stored_page = database.scalar(select(Page).where(Page.meta_page_id == page_id))
+	if stored_page is not None and not stored_page.is_active:
+		raise HTTPException(status_code=409, detail="This page is disabled in the admin portal")
+	settings = load_runtime_settings(database)
+	try:
+		page = get_page(page_id, access_token)
+		page_name = str(page.get("name") or page_id)
+		page_token = str(page.get("access_token") or access_token)
+		request = _build_page_request(page_id, page_name, page_token, settings)
+		if request is None:
+			return []
+
+		cached = load_sentiments(database, request.comments)
+		to_classify = [
+			comment
+			for comment in request.comments
+			if comment.comment_id
+			and comment.comment_id not in cached
+			and comment.body.strip()
+		]
+		logger.info(
+			"Sentiment cache: cached=%d new=%d", len(cached), len(to_classify)
+		)
+		fresh = {}
+		if to_classify:
+			fresh = classify_sentiment(
+				request.model_copy(update={"comments": to_classify}),
+				settings,
+				on_batch=lambda comments, results: save_sentiments(
+					database, comments, results
+				),
+			)
+	except MetaAPIRequestError as error:
+		logger.warning("Meta sentiment request failed: %s", error)
+		raise HTTPException(status_code=504, detail="Meta content request timed out or failed") from error
+	except MetaAPIError as error:
+		logger.warning("Meta sentiment retrieval failed: %s", error)
+		raise HTTPException(status_code=502, detail=f"Meta content could not be retrieved: {error}") from error
+	except AIConfigurationError as error:
+		raise HTTPException(status_code=500, detail=str(error)) from error
+	except AIProviderError as error:
+		raise HTTPException(status_code=503, detail="The AI provider is temporarily unavailable") from error
+	except AIOutputError as error:
+		raise HTTPException(status_code=502, detail=str(error)) from error
+
+	labelled: list[CommentSentiment] = []
+	for comment in request.comments:  # newest first
+		if not comment.comment_id:
+			continue
+		if comment.comment_id in cached:
+			row = cached[comment.comment_id]
+			label, confidence, reason = row.sentiment, row.confidence, row.reason or ""
+		elif comment.comment_id in fresh:
+			result = fresh[comment.comment_id]
+			label, confidence, reason = result.sentiment, result.confidence, result.reason
+		elif not comment.body.strip():
+			label, confidence, reason = "neutral", 0.0, "No text (image or sticker only)"
+		else:
+			label, confidence, reason = "unknown", 0.0, "Not classified this run; try again"
+		if sentiment is not None and label != sentiment:
+			continue
+		labelled.append(
+			CommentSentiment(
+				comment_id=comment.comment_id,
+				post_id=comment.post_id,
+				page_id=comment.page_id,
+				location=request.location,
+				sentiment=label,
+				confidence=confidence,
+				reason=reason,
+				comment=comment.body,
+				author=comment.author or "",
+				comment_link=comment.comment_link or "",
+				time_posted=comment.time_posted or "",
+			)
+		)
+	return labelled
 
 
 @router.get("/post/{post_id}", response_model=list[dict])
