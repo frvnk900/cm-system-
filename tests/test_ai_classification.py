@@ -225,7 +225,7 @@ def test_provider_errors_are_returned_without_details(monkeypatch):
 	monkeypatch.setattr(
 		ai,
 		"_build_page_request",
-		lambda page_id, page_name, access_token, settings: _request(),
+		lambda page_id, page_name, access_token, settings, **_kwargs: _request(),
 	)
 
 	response = client.post("/api/ai/classify/page_1")

@@ -23,10 +23,14 @@ class PostContext(BaseModel):
 	body: str
 
 
+Platform = Literal["facebook", "instagram"]
+
+
 class CommentContext(BaseModel):
 	comment_id: str | None = None
 	post_id: str | None = None
 	page_id: str | None = None
+	platform: Platform = "facebook"
 	author: str | None = None
 	body: str
 	comment_link: str | None = None

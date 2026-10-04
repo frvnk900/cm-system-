@@ -9,6 +9,7 @@ from app.api.db.db import get_db
 from app.api.db.save_page_creds_ import save_page_credentials
 from app.api.schema.pages_model import Page, PageCreate, PageResponse
 from app.services.get_pages_ import MetaAPIError, get_page, get_pages
+from app.services.instagram_ import get_pages_with_instagram, instagram_account_of
 
 
 load_dotenv()
@@ -44,8 +45,12 @@ def save_pages_to_db(
 
 	try:
 		stored_pages = []
-		for page_data in get_pages(user_access_token):
+		for page_data in get_pages_with_instagram(user_access_token):
 			meta_page_id = str(page_data["id"])
+			existing = database.scalar(
+				select(Page).where(Page.meta_page_id == meta_page_id)
+			)
+			instagram = instagram_account_of(page_data)
 			stored_pages.append(
 				save_page_credentials(
 					database,
@@ -53,10 +58,12 @@ def save_pages_to_db(
 						id=int(meta_page_id),
 						name=page_data["name"],
 						meta_page_id=meta_page_id,
-						location_id=None,
+						location_id=existing.location_id if existing else None,
 						access_token=page_data.get(
 							"access_token", user_access_token
 						),
+						ig_user_id=instagram["id"] if instagram else None,
+						ig_username=instagram["username"] if instagram else None,
 					),
 				),
 			)

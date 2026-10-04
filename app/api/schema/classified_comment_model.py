@@ -19,6 +19,7 @@ class ClassifiedComment(Base):
     result: Mapped[dict[str, Any] | None] = mapped_column(
         JSON(none_as_null=True), nullable=True
     )
+    platform: Mapped[str | None] = mapped_column(String(20), nullable=True)
     page_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     location: Mapped[str | None] = mapped_column(String(255), nullable=True)
     comment_text: Mapped[str | None] = mapped_column(Text, nullable=True)

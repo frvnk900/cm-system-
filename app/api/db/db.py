@@ -57,6 +57,15 @@ def create_tables() -> None:
 			text("ALTER TABLE pages ALTER COLUMN id TYPE BIGINT")
 		)
 		for column, column_type in (
+			("ig_user_id", "VARCHAR(255)"),
+			("ig_username", "VARCHAR(255)"),
+			("instagram_enabled", "BOOLEAN NOT NULL DEFAULT TRUE"),
+		):
+			connection.execute(
+				text(f"ALTER TABLE pages ADD COLUMN IF NOT EXISTS {column} {column_type}")
+			)
+		for column, column_type in (
+			("platform", "VARCHAR(20)"),
 			("page_id", "VARCHAR(255)"),
 			("location", "VARCHAR(255)"),
 			("comment_text", "TEXT"),

@@ -28,6 +28,7 @@ from app.services.ai_classification import (
 from app.services.get_comments_ import get_all_comments_from_a_post, parse_meta_time
 from app.services.get_pages_ import MetaAPIError, MetaAPIRequestError, get_page
 from app.services.get_posts_ import get_page_posts
+from app.services.instagram_ import get_instagram_comments, get_instagram_media
 
 
 load_dotenv()
@@ -59,13 +60,60 @@ def _get_meta_access_token() -> str:
 	return access_token
 
 
+def instagram_id_for(stored_page: Page | None) -> str | None:
+	"""The page's Instagram account id, if linked and switched on in the portal."""
+	if stored_page is None or not stored_page.instagram_enabled:
+		return None
+	return stored_page.ig_user_id
+
+
+def _collect_instagram(
+	instagram_id: str,
+	page_id: str,
+	access_token: str,
+	post_window_start: datetime,
+	comment_window_start: datetime,
+	max_items: int,
+	posts_by_id: dict[str, PostContext],
+	recent: list[tuple[datetime, dict, str]],
+) -> None:
+	"""Add recent Instagram comments; a failure here never blocks Facebook."""
+	try:
+		media_items = get_instagram_media(
+			instagram_id, access_token, post_window_start, MAX_POSTS_SCANNED
+		)
+		for media in media_items:
+			media_id = str(media["id"])
+			new_comments = get_instagram_comments(
+				media, access_token, comment_window_start, max_items
+			)
+			for comment in new_comments:
+				written_at = parse_meta_time(comment.get("created_time"))
+				if written_at is not None:
+					recent.append((written_at, comment, media_id))
+			if new_comments:
+				posts_by_id[media_id] = PostContext(
+					post_id=media_id,
+					page_id=page_id,
+					body=str(media.get("caption") or ""),
+				)
+		logger.info("Instagram media scanned: media=%d", len(media_items))
+	except MetaAPIError as error:
+		logger.warning("Instagram comments skipped for page %s: %s", page_id, error)
+
+
 def _build_page_request(
-	page_id: str, page_name: str, access_token: str, settings: RuntimeSettings
+	page_id: str,
+	page_name: str,
+	access_token: str,
+	settings: RuntimeSettings,
+	instagram_id: str | None = None,
 ) -> ClassificationRequest | None:
 	"""Collect comments written recently, on any post from the post window.
 
 	Comments are selected by when they were written (``lookback_days``), not by
 	the age of their post, so new comments on older posts are still checked.
+	With ``instagram_id``, the linked Instagram account is included too.
 	Returns None when there is nothing to classify.
 	"""
 	max_items = settings.max_comments_per_run
@@ -111,6 +159,18 @@ def _build_page_request(
 				len(recent),
 			)
 
+	if instagram_id:
+		_collect_instagram(
+			instagram_id,
+			page_id,
+			access_token,
+			post_window_start,
+			comment_window_start,
+			max_items,
+			posts_by_id,
+			recent,
+		)
+
 	# Newest comments first, across all posts, up to the per-run limit.
 	recent.sort(key=lambda item: item[0], reverse=True)
 	comments: list[CommentContext] = []
@@ -123,6 +183,7 @@ def _build_page_request(
 				),
 				post_id=post_id,
 				page_id=page_id,
+				platform=comment.get("platform", "facebook"),
 				author=(
 					str(comment_author.get("name"))
 					if isinstance(comment_author, dict)
@@ -140,10 +201,11 @@ def _build_page_request(
 
 	logger.info(
 		"Meta comment collection completed: posts_scanned=%d posts_with_new_comments=%d "
-		"new_comments=%d",
+		"new_comments=%d instagram=%d",
 		len(posts_from_meta),
 		len(posts),
 		len(comments),
+		sum(comment.platform == "instagram" for comment in comments),
 	)
 	# ClassificationRequest needs at least one post and one comment.
 	if not posts or not comments:
@@ -169,7 +231,7 @@ def _format_results(
 			result.model_copy(
 				update={
 					"logged_at": logged_at,
-					"platform": "facebook",
+					"platform": comment.platform if comment else "facebook",
 					"page_name": request.location,
 					"comment": comment.body if comment else "",
 					"comment_link": comment.comment_link if comment else "",
@@ -236,7 +298,13 @@ def classify_page(
 		page = get_page(page_id, access_token)
 		page_name = str(page.get("name") or page_id)
 		page_access_token = str(page.get("access_token") or access_token)
-		request = _build_page_request(page_id, page_name, page_access_token, settings)
+		request = _build_page_request(
+			page_id,
+			page_name,
+			page_access_token,
+			settings,
+			instagram_id=instagram_id_for(stored_page),
+		)
 		if request is None:
 			return []
 		return _format_results(

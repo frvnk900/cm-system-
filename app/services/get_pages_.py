@@ -40,13 +40,13 @@ def _graph_get(client: httpx.Client, url: str, params: dict[str, Any] | None = N
 	return data
 
 
-def get_pages(user_access_token: str) -> list[dict[str, Any]]:
+def get_pages(user_access_token: str, fields: str = PAGE_FIELDS) -> list[dict[str, Any]]:
 	"""Return every page the user manages, following Graph API pagination."""
 	pages: list[dict[str, Any]] = []
 	url: str | None = f"{META_GRAPH_URL}/me/accounts"
 	params: dict[str, Any] | None = {
 		"access_token": user_access_token,
-		"fields": PAGE_FIELDS,
+		"fields": fields,
 		"limit": 100,
 	}
 

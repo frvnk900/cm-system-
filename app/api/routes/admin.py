@@ -30,7 +30,8 @@ from app.api.schema.classified_comment_model import ClassifiedComment
 from app.api.schema.pages_model import Page, PageCreate
 from app.api.schema.system_prompt_model import SystemPromptVersion
 from app.core.settings import RuntimeSettings, default_runtime_settings, get_settings
-from app.services.get_pages_ import MetaAPIError, get_pages
+from app.services.get_pages_ import MetaAPIError
+from app.services.instagram_ import get_pages_with_instagram, instagram_account_of
 from app.services.prompt.system_prompt import SYSTEM_PROMPT
 
 
@@ -225,6 +226,7 @@ def reset_prompt(database: Session = Depends(get_db)) -> dict:
 class PageUpdate(BaseModel):
 	is_active: bool | None = None
 	location_id: int | None = None
+	instagram_enabled: bool | None = None
 
 
 @router.get("/api/pages", dependencies=[Depends(require_admin)])
@@ -247,6 +249,9 @@ def list_pages(database: Session = Depends(get_db)) -> list[dict]:
 			"name": page.name,
 			"location_id": page.location_id,
 			"is_active": page.is_active,
+			"ig_user_id": page.ig_user_id,
+			"ig_username": page.ig_username,
+			"instagram_enabled": page.instagram_enabled,
 			"checked": checked.get(page.meta_page_id, 0),
 			"flagged": flagged.get(page.meta_page_id, 0),
 		}
@@ -256,17 +261,20 @@ def list_pages(database: Session = Depends(get_db)) -> list[dict]:
 
 @router.post("/api/pages/import", dependencies=[Depends(require_admin)])
 def import_pages(database: Session = Depends(get_db)) -> dict:
-	"""Pull every page the Meta token manages into the pages table."""
+	"""Pull every page the Meta token manages, with its linked Instagram account."""
 	user_token = get_settings().meta_access_token
 	if not user_token:
 		raise HTTPException(status_code=500, detail="META_ACCESS_TOKEN is not set in .env")
 	try:
-		meta_pages = get_pages(user_token)
+		meta_pages = get_pages_with_instagram(user_token)
 	except MetaAPIError as error:
 		raise HTTPException(status_code=502, detail=str(error)) from error
+	instagram_linked = 0
 	for page_data in meta_pages:
 		meta_page_id = str(page_data["id"])
 		existing = database.scalar(select(Page).where(Page.meta_page_id == meta_page_id))
+		instagram = instagram_account_of(page_data)
+		instagram_linked += instagram is not None
 		save_page_credentials(
 			database,
 			PageCreate(
@@ -275,9 +283,11 @@ def import_pages(database: Session = Depends(get_db)) -> dict:
 				meta_page_id=meta_page_id,
 				location_id=existing.location_id if existing else None,
 				access_token=page_data.get("access_token", user_token),
+				ig_user_id=instagram["id"] if instagram else None,
+				ig_username=instagram["username"] if instagram else None,
 			),
 		)
-	return {"imported": len(meta_pages)}
+	return {"imported": len(meta_pages), "instagram_linked": instagram_linked}
 
 
 @router.patch("/api/pages/{page_id}", dependencies=[Depends(require_admin)])
@@ -288,7 +298,12 @@ def update_page(page_id: str, body: PageUpdate, database: Session = Depends(get_
 	for field, value in body.model_dump(exclude_unset=True).items():
 		setattr(page, field, value)
 	database.commit()
-	return {"page_id": page.meta_page_id, "is_active": page.is_active, "location_id": page.location_id}
+	return {
+		"page_id": page.meta_page_id,
+		"is_active": page.is_active,
+		"location_id": page.location_id,
+		"instagram_enabled": page.instagram_enabled,
+	}
 
 
 # ---------- results & cache ----------
@@ -312,6 +327,7 @@ def list_results(
 		rows.append(
 			{
 				"comment_id": row.comment_id,
+				"platform": row.platform or "facebook",
 				"page_id": row.page_id,
 				"location": row.location,
 				"type": result.get("type"),

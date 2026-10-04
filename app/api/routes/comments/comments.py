@@ -13,7 +13,11 @@ from app.api.db.page_access_ import (
 	get_all_page_access_tokens,
 	get_page_access_token,
 )
-from app.api.routes.ai import _build_page_request, _get_meta_access_token
+from app.api.routes.ai import (
+	_build_page_request,
+	_get_meta_access_token,
+	instagram_id_for,
+)
 from app.api.schema.ai_model import CommentSentiment
 from app.api.schema.pages_model import Page
 from app.services.ai_classification import (
@@ -103,7 +107,13 @@ def list_page_comment_sentiment(
 		page = get_page(page_id, access_token)
 		page_name = str(page.get("name") or page_id)
 		page_token = str(page.get("access_token") or access_token)
-		request = _build_page_request(page_id, page_name, page_token, settings)
+		request = _build_page_request(
+			page_id,
+			page_name,
+			page_token,
+			settings,
+			instagram_id=instagram_id_for(stored_page),
+		)
 		if request is None:
 			return []
 
@@ -162,6 +172,7 @@ def list_page_comment_sentiment(
 				post_id=comment.post_id,
 				page_id=comment.page_id,
 				location=request.location,
+				platform=comment.platform,
 				sentiment=label,
 				confidence=confidence,
 				reason=reason,

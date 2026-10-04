@@ -18,6 +18,12 @@ class Page(Base):
 	location_id: Mapped[int | None] = mapped_column(BIGINT, nullable=True, index=True)
 	access_token: Mapped[str] = mapped_column(String, nullable=False)
 	is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+	# Instagram business account linked to this Page (found on import).
+	ig_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+	ig_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+	instagram_enabled: Mapped[bool] = mapped_column(
+		Boolean, default=True, server_default="true", nullable=False
+	)
 	created_at: Mapped[datetime] = mapped_column(
 		DateTime(timezone=True),
 		server_default=func.now(),
@@ -34,6 +40,8 @@ class PageCreate(BaseModel):
 	location_id: int | None = None
 	access_token: str
 	is_active: bool = True
+	ig_user_id: str | None = None
+	ig_username: str | None = None
 
 
 class PageImport(BaseModel):

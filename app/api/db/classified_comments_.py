@@ -48,6 +48,7 @@ def save_classified(
 				comment_id=comment.comment_id,
 				body_hash=body_hash(comment.body),
 				result=result.model_dump(include=OUTPUT_FIELDS) if result else None,
+				platform=comment.platform,
 				page_id=comment.page_id,
 				location=location,
 				comment_text=comment.body,

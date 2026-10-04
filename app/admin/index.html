@@ -171,7 +171,7 @@
           <button class="btn" id="import-pages">Import pages from Meta</button>
         </div>
         <div class="table-wrap"><table>
-          <thead><tr><th>Enabled</th><th>Location</th><th>Page ID</th><th>Location ID</th><th>Checked</th><th>Flagged</th><th></th></tr></thead>
+          <thead><tr><th>Enabled</th><th>Location</th><th>Page ID</th><th>Instagram</th><th>Location ID</th><th>Checked</th><th>Flagged</th><th></th></tr></thead>
           <tbody id="pages-body"></tbody>
         </table></div>
       </section>
@@ -191,7 +191,7 @@
           <button class="btn danger" id="clear-all">Clear entire cache</button>
         </div>
         <div class="table-wrap"><table>
-          <thead><tr><th>Location</th><th>Type</th><th>Conf.</th><th>Comment</th><th>Reason</th><th></th></tr></thead>
+          <thead><tr><th>Location</th><th>Platform</th><th>Type</th><th>Conf.</th><th>Comment</th><th>Reason</th><th></th></tr></thead>
           <tbody id="results-body"></tbody>
         </table></div>
       </section>
@@ -366,7 +366,7 @@ async function loadPages() {
   pagesCache = await api('/pages');
   const body = $('#pages-body');
   if (!pagesCache.length) {
-    body.innerHTML = '<tr><td colspan="7" class="empty">No pages saved yet. Click "Import pages from Meta".</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" class="empty">No pages saved yet. Click "Import pages from Meta".</td></tr>';
     return;
   }
   body.innerHTML = pagesCache.map((p) => `
@@ -374,6 +374,9 @@ async function loadPages() {
       <td><label class="switch"><input type="checkbox" data-toggle="${esc(p.page_id)}" ${p.is_active ? 'checked' : ''}><span></span></label></td>
       <td>${esc(p.name)}</td>
       <td class="muted">${esc(p.page_id)}</td>
+      <td style="white-space:nowrap">${p.ig_user_id
+        ? `<label class="switch" title="Check Instagram comments for this location"><input type="checkbox" data-instagram="${esc(p.page_id)}" ${p.instagram_enabled ? 'checked' : ''}><span></span></label> <span class="muted">@${esc(p.ig_username || p.ig_user_id)}</span>`
+        : '<span class="muted" title="No Instagram business account is linked to this page. Link it in Meta Business Suite, then import again.">not linked</span>'}</td>
       <td><input style="width:120px" type="number" data-location="${esc(p.page_id)}" value="${esc(p.location_id)}" placeholder="—"></td>
       <td class="num">${p.checked}</td>
       <td class="num">${p.flagged}</td>
@@ -387,6 +390,9 @@ $('#pages-body').addEventListener('change', async (event) => {
     if (el.dataset.toggle) {
       await api(`/pages/${encodeURIComponent(el.dataset.toggle)}`, { method: 'PATCH', body: JSON.stringify({ is_active: el.checked }) });
       toast(el.checked ? 'Location enabled' : 'Location disabled');
+    } else if (el.dataset.instagram) {
+      await api(`/pages/${encodeURIComponent(el.dataset.instagram)}`, { method: 'PATCH', body: JSON.stringify({ instagram_enabled: el.checked }) });
+      toast(el.checked ? 'Instagram comments will be checked' : 'Instagram comments turned off');
     } else if (el.dataset.location) {
       const value = el.value === '' ? null : Number(el.value);
       await api(`/pages/${encodeURIComponent(el.dataset.location)}`, { method: 'PATCH', body: JSON.stringify({ location_id: value }) });
@@ -405,8 +411,8 @@ $('#pages-body').addEventListener('click', async (event) => {
 
 $('#import-pages').addEventListener('click', async () => {
   try {
-    const { imported } = await api('/pages/import', { method: 'POST' });
-    toast(`Imported ${imported} pages`);
+    const { imported, instagram_linked } = await api('/pages/import', { method: 'POST' });
+    toast(`Imported ${imported} pages (${instagram_linked} with Instagram)`);
     loadPages();
   } catch (error) { toast(error.message); }
 });
@@ -425,10 +431,11 @@ async function loadResults() {
   if ($('#filter-type').value) params.set('type', $('#filter-type').value);
   const rows = await api('/results?' + params);
   const body = $('#results-body');
-  if (!rows.length) { body.innerHTML = '<tr><td colspan="6" class="empty">No flagged comments.</td></tr>'; return; }
+  if (!rows.length) { body.innerHTML = '<tr><td colspan="7" class="empty">No flagged comments.</td></tr>'; return; }
   body.innerHTML = rows.map((r) => `
     <tr>
       <td>${esc(r.location)}</td>
+      <td><span class="chip">${r.platform === 'instagram' ? 'Instagram' : 'Facebook'}</span></td>
       <td><span class="chip sev-${esc(r.severity)}">${esc(r.type)}</span></td>
       <td class="num">${r.confidence == null ? '' : Math.round(r.confidence * 100) + '%'}</td>
       <td class="comment">${esc(r.comment)}<div class="hint">${esc(r.author || '')}${r.comment_link ? ` · <a href="${esc(r.comment_link)}" target="_blank" rel="noopener">open</a>` : ''}</div></td>
