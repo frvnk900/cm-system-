@@ -27,11 +27,16 @@ def _get_access_token() -> str:
 	return access_token
 
 
+def _without_token(page: dict) -> dict:
+	"""Page access tokens stay on the server; they are never returned."""
+	return {key: value for key, value in page.items() if key != "access_token"}
+
+
 @router.get("", response_model=list[dict])
 def list_pages() -> list[dict]:
-	"""Return every page managed by the configured Meta user token."""
+	"""Return every page managed by the configured Meta user token (no tokens)."""
 	try:
-		return get_pages(_get_access_token())
+		return [_without_token(page) for page in get_pages(_get_access_token())]
 	except MetaAPIError as error:
 		raise HTTPException(status_code=502, detail="Meta content could not be retrieved") from error
 
@@ -89,8 +94,8 @@ def list_active_pages(database: Session = Depends(get_db)) -> list[dict]:
 def read_page(
 	page_id: str,
 ) -> dict:
-	"""Return one Meta page by its page id."""
+	"""Return one Meta page by its page id (no token)."""
 	try:
-		return get_page(page_id, _get_access_token())
+		return _without_token(get_page(page_id, _get_access_token()))
 	except MetaAPIError as error:
 		raise HTTPException(status_code=502, detail="Meta content could not be retrieved") from error

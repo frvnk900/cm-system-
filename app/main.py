@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
@@ -18,6 +18,7 @@ from app.api.routes.comments.comments import router as comments_router
 from app.api.routes.pages.pages import router as pages_router
 from app.api.routes.posts.posts import router as posts_router
 from app.api.schema.pages_model import Page
+from app.core.security import require_api_key
 from app.core.settings import get_settings
 
 
@@ -48,11 +49,14 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+# The admin portal has its own password login.
 app.include_router(admin_router)
-app.include_router(ai_router)
-app.include_router(comments_router)
-app.include_router(pages_router)
-app.include_router(posts_router)
+# Everything else needs the API key (once API_KEY is set).
+api_protection = [Depends(require_api_key)]
+app.include_router(ai_router, dependencies=api_protection)
+app.include_router(comments_router, dependencies=api_protection)
+app.include_router(pages_router, dependencies=api_protection)
+app.include_router(posts_router, dependencies=api_protection)
 app.add_middleware(
 	TrustedHostMiddleware,
 	allowed_hosts=trusted_hosts,

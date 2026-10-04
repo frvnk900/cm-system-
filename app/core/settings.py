@@ -18,6 +18,8 @@ class Settings(BaseSettings):
 	openai_api_key: str | None = None
 	gemini_api_key: str | None = None
 	meta_access_token: str | None = None
+	# Clients (the Sheet) must send this as the X-API-Key header once it is set.
+	api_key: str | None = None
 	admin_password: str | None = None
 	admin_session_secret: str | None = None
 	admin_session_hours: int = 12

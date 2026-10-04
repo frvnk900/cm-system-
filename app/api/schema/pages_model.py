@@ -52,7 +52,7 @@ class PageImport(BaseModel):
 
 
 class PageResponse(BaseModel):
-	"""API response model for a stored Meta page."""
+	"""API response model for a stored Meta page (the access token is never returned)."""
 
 	model_config = ConfigDict(from_attributes=True)
 
@@ -60,6 +60,5 @@ class PageResponse(BaseModel):
 	name: str
 	meta_page_id: str
 	location_id: int | None
-	access_token: str
 	is_active: bool
 	created_at: datetime
