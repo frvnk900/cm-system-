@@ -36,7 +36,8 @@ from app.services.prompt.system_prompt import SYSTEM_PROMPT
 
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/admin", tags=["admin"], include_in_schema=False)
+ADMIN_PATH = get_settings().admin_path
+router = APIRouter(prefix=ADMIN_PATH, tags=["admin"], include_in_schema=False)
 
 ADMIN_PAGE = Path(__file__).resolve().parents[2] / "admin" / "index.html"
 SESSION_COOKIE = "admin_session"
@@ -105,14 +106,14 @@ def login(body: LoginRequest, request: Request, response: Response) -> dict:
 		httponly=True,
 		samesite="strict",
 		secure=request.url.scheme == "https",
-		path="/admin",
+		path=ADMIN_PATH,
 	)
 	return {"ok": True}
 
 
 @router.post("/api/logout")
 def logout(response: Response) -> dict:
-	response.delete_cookie(SESSION_COOKIE, path="/admin")
+	response.delete_cookie(SESSION_COOKIE, path=ADMIN_PATH)
 	return {"ok": True}
 
 

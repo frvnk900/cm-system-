@@ -21,6 +21,17 @@ class Settings(BaseSettings):
 	admin_password: str | None = None
 	admin_session_secret: str | None = None
 	admin_session_hours: int = 12
+	# Where the admin portal lives. Set ADMIN_PATH to something private
+	# (e.g. /team-portal-7f3k) so it can't be found by guessing /admin.
+	admin_path: str = "/admin"
+
+	@field_validator("admin_path")
+	@classmethod
+	def _clean_admin_path(cls, value: str) -> str:
+		path = "/" + value.strip().strip("/")
+		if path == "/" or not all(part.replace("-", "").replace("_", "").isalnum() for part in path.strip("/").split("/")):
+			raise ValueError("ADMIN_PATH must look like /my-portal (letters, digits, - and _)")
+		return path
 
 	# Server config: shown read-only in the admin portal.
 	meta_graph_version: str = Field(

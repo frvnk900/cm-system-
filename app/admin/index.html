@@ -3,96 +3,190 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Moderation Admin</title>
+<meta name="robots" content="noindex, nofollow">
+<title>Zawadie · Admin</title>
+<link rel="icon" type="image/png" href="/favicon.png">
 <style>
+  /* Same flat theme as the public landing page. */
   :root {
-    --bg: #f6f7f9; --panel: #fff; --text: #1c1f24; --muted: #667085; --line: #e4e7ec;
-    --accent: #2f6fed; --accent-text: #fff; --danger: #d92d20; --ok: #12b76a; --warn: #f79009;
-    --chip: #eef2f6;
+    --bg: #ffffff; --ink: #0f1115; --text: #3d434d; --muted: #6b727d;
+    --line: #e3e5e8; --panel: #f7f8f9; --accent: #0b5cad;
+    --ok: #1a7f4b; --danger: #b42318; --warn: #9a6700;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #0f1115; --panel: #171a21; --text: #e6e8ec; --muted: #98a2b3; --line: #2a2f3a;
-      --accent: #5b8def; --chip: #232833;
+      --bg: #0e1013; --ink: #f2f3f5; --text: #b9bec6; --muted: #868d98;
+      --line: #23272e; --panel: #14171b; --accent: #6aa9e9;
+      --ok: #4cc38a; --danger: #f97066; --warn: #e2b53a;
     }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); }
-  header { display: flex; align-items: center; gap: 16px; padding: 12px 24px; background: var(--panel); border-bottom: 1px solid var(--line); }
-  header h1 { font-size: 16px; margin: 0; flex: 1; }
-  nav { display: flex; gap: 4px; padding: 0 24px; background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; }
-  nav button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 12px 14px; color: var(--muted); font: inherit; cursor: pointer; white-space: nowrap; }
-  nav button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
-  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
-  section.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin-bottom: 20px; }
-  section.card h2 { font-size: 15px; margin: 0 0 4px; }
-  .sub { color: var(--muted); margin: 0 0 16px; font-size: 13px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
-  label { display: block; font-weight: 500; margin-bottom: 4px; }
-  .hint { color: var(--muted); font-size: 12px; margin-top: 3px; }
-  input, select { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
-  button.btn { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
-  button.btn:hover { border-color: var(--muted); }
-  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; color: var(--ink); }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 0 24px; }
+
+  /* Thin bar at the very top while any request is in flight. */
+  #progress { position: fixed; top: 0; left: 0; right: 0; height: 2px; z-index: 20; overflow: hidden; opacity: 0; transition: opacity .15s; }
+  #progress.on { opacity: 1; }
+  #progress::before { content: ""; position: absolute; top: 0; bottom: 0; width: 35%; background: var(--ink); animation: slide 1.1s ease-in-out infinite; }
+  @keyframes slide { from { left: -35%; } to { left: 100%; } }
+
+  .spinner { display: inline-block; width: 13px; height: 13px; border: 2px solid currentColor; border-right-color: transparent;
+    border-radius: 50%; vertical-align: -2px; margin-right: 8px; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .bar { border-bottom: 1px solid var(--line); }
+  .bar .wrap { display: flex; align-items: center; justify-content: space-between; height: 64px; gap: 16px; }
+  .name { display: flex; align-items: center; gap: 10px; color: var(--ink); font-weight: 650; font-size: 18px; letter-spacing: -.02em; text-decoration: none; }
+  .name img { display: block; width: 24px; height: 28px; }
+  .name small { font-weight: 500; color: var(--muted); font-size: 13px; letter-spacing: 0; border-left: 1px solid var(--line); padding-left: 10px; margin-left: 2px; }
+  .bar .right { display: flex; align-items: center; gap: 12px; }
+  .link { color: var(--muted); font-size: 13px; text-decoration: none; }
+  .link:hover { color: var(--ink); }
+
+  nav { border-bottom: 1px solid var(--line); }
+  nav .wrap { display: flex; gap: 24px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  nav .wrap::-webkit-scrollbar { display: none; }
+  nav button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 14px 0 12px; color: var(--muted);
+    font: inherit; font-weight: 500; cursor: pointer; white-space: nowrap; }
+  nav button:hover { color: var(--ink); }
+  nav button.active { color: var(--ink); border-bottom-color: var(--ink); font-weight: 600; }
+
+  main.wrap { padding-top: 32px; padding-bottom: 56px; }
+  [data-panel].is-loading { opacity: .5; pointer-events: none; transition: opacity .15s; }
+
+  section.card { border: 1px solid var(--line); border-radius: 8px; padding: 22px; margin-bottom: 20px; }
+  section.card h2 { color: var(--ink); font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 18px; font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px; }
+  label { display: block; color: var(--ink); font-weight: 500; font-size: 13px; margin-bottom: 5px; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+  input, select, textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); font: inherit; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  textarea { min-height: 460px; padding: 12px; font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; resize: vertical; }
+
+  button.btn { display: inline-flex; align-items: center; height: 34px; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--ink); font: inherit; font-weight: 500; cursor: pointer; white-space: nowrap; }
+  button.btn:hover:not(:disabled) { border-color: var(--muted); }
+  button.btn:disabled { opacity: .6; cursor: default; }
+  button.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.primary { background: var(--ink); border-color: var(--ink); color: var(--bg); font-weight: 600; }
+  button.primary:hover:not(:disabled) { opacity: .88; }
   button.danger { color: var(--danger); }
-  button.small { padding: 4px 10px; font-size: 12px; }
+  button.small { height: 28px; padding: 0 10px; font-size: 12px; }
   .actions { display: flex; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
   .toolbar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
   .toolbar select { width: auto; }
   .toolbar .spacer { flex: 1; }
-  .table-wrap { overflow-x: auto; }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
   table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  th { background: var(--panel); color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+  td { color: var(--ink); }
   td.num { font-variant-numeric: tabular-nums; }
-  .chip { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--chip); font-size: 12px; white-space: nowrap; }
-  .sev-critical { background: var(--danger); color: #fff; }
-  .sev-high { background: var(--warn); color: #fff; }
+  td.loc { min-width: 230px; font-weight: 500; }
+  td.id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  td.tight { white-space: nowrap; width: 1%; }
+  td input[type="number"] { width: 92px; padding: 5px 8px; }
+  td.muted, .muted { color: var(--muted); }
   .comment { max-width: 380px; white-space: pre-wrap; word-break: break-word; }
-  .muted { color: var(--muted); }
-  .switch { position: relative; width: 38px; height: 22px; display: inline-block; }
+  .empty { padding: 36px; text-align: center; color: var(--muted); }
+
+  .chip { display: inline-block; padding: 0 8px; border-radius: 4px; border: 1px solid var(--line); color: var(--text); font-size: 12px; font-weight: 500; white-space: nowrap; }
+  .sev-critical { color: var(--danger); border-color: currentColor; }
+  .sev-high { color: var(--warn); border-color: currentColor; }
+
+  .switch { position: relative; width: 36px; height: 20px; display: inline-block; vertical-align: middle; }
   .switch input { opacity: 0; width: 0; height: 0; }
-  .switch span { position: absolute; inset: 0; background: var(--line); border-radius: 999px; cursor: pointer; transition: .15s; }
-  .switch span::before { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .15s; }
+  .switch span { position: absolute; inset: 0; background: var(--line); border-radius: 999px; cursor: pointer; transition: background .15s; }
+  .switch span::before { content: ""; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform .15s; }
   .switch input:checked + span { background: var(--ok); }
   .switch input:checked + span::before { transform: translateX(16px); }
-  textarea { width: 100%; min-height: 460px; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; resize: vertical; }
-  .kv { display: grid; grid-template-columns: 220px 1fr; gap: 8px 16px; }
-  .kv code { font-size: 13px; }
-  #login { max-width: 360px; margin: 12vh auto; }
-  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--panel); padding: 10px 16px; border-radius: 8px; opacity: 0; transition: .2s; pointer-events: none; }
+  .switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .kv { display: grid; grid-template-columns: 240px 1fr; gap: 10px 16px; align-items: center; }
+
+  /* Sign-in and first-load screens. */
+  .center { max-width: 380px; margin: 0 auto; padding: 12vh 24px 0; }
+  .center h1 { color: var(--ink); font-size: 24px; letter-spacing: -.02em; margin: 0 0 6px; }
+  .center .card { margin-top: 24px; }
+  #boot { color: var(--muted); text-align: center; padding-top: 30vh; }
+  #login-error { color: var(--danger); min-height: 18px; }
+
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px;
+    border-radius: 6px; font-weight: 500; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100vw - 32px); }
   #toast.show { opacity: 1; }
   .hidden { display: none !important; }
-  .empty { padding: 32px; text-align: center; color: var(--muted); }
+
+  @media (max-width: 640px) { .kv { grid-template-columns: 1fr; gap: 2px 0; } .kv div:nth-child(even) { margin-bottom: 10px; } .name small { display: none; } }
+  @media (prefers-reduced-motion: reduce) { #progress::before, .spinner { animation-duration: 2.5s; } }
 </style>
 </head>
 <body>
 
+<div id="progress" aria-hidden="true"></div>
+
+<!-- First load: shown until we know whether the visitor is signed in. -->
+<div id="boot"><span class="spinner"></span>Loading</div>
+
+<!-- Sign in -->
 <div id="login" class="hidden">
-  <section class="card">
-    <h2>Moderation Admin</h2>
-    <p class="sub">Enter the admin password from <code>.env</code>.</p>
-    <form id="login-form">
-      <input id="password" type="password" placeholder="Password" autocomplete="current-password" required>
-      <div class="actions"><button class="btn primary" type="submit">Log in</button></div>
-      <p id="login-error" class="hint" style="color: var(--danger)"></p>
-    </form>
-  </section>
+  <div class="bar">
+    <div class="wrap">
+      <a class="name" href="/">
+        <img src="/logo.png" alt="" width="24" height="28">
+        Zawadie
+      </a>
+      <a class="link" href="/">Back to site</a>
+    </div>
+  </div>
+  <div class="center">
+    <h1>Sign in</h1>
+    <p class="sub" style="margin:0">Admin access for the moderation service.</p>
+    <section class="card">
+      <form id="login-form">
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" required>
+        <p id="login-error" class="hint" role="alert"></p>
+        <div class="actions" style="margin-top:8px"><button class="btn primary" type="submit" id="login-button">Sign in</button></div>
+      </form>
+    </section>
+  </div>
 </div>
 
+<!-- Portal -->
 <div id="app" class="hidden">
-  <header>
-    <h1>Moderation Admin</h1>
-    <button class="btn small" id="logout">Log out</button>
-  </header>
+  <div class="bar">
+    <div class="wrap">
+      <a class="name" href="/">
+        <img src="/logo.png" alt="" width="24" height="28">
+        Zawadie <small>Admin</small>
+      </a>
+      <div class="right">
+        <a class="link" href="/">View site</a>
+        <button class="btn small" id="logout">Sign out</button>
+      </div>
+    </div>
+  </div>
   <nav>
-    <button data-tab="settings" class="active">Settings</button>
-    <button data-tab="prompt">System prompt</button>
-    <button data-tab="pages">Locations</button>
-    <button data-tab="results">Flagged comments</button>
-    <button data-tab="environment">Keys &amp; server</button>
+    <div class="wrap">
+      <button data-tab="settings" class="active">Settings</button>
+      <button data-tab="prompt">System prompt</button>
+      <button data-tab="pages">Locations</button>
+      <button data-tab="results">Flagged comments</button>
+      <button data-tab="environment">Keys &amp; server</button>
+    </div>
   </nav>
-  <main>
+  <main class="wrap">
     <!-- Settings -->
     <div data-panel="settings">
       <form id="settings-form">
@@ -128,12 +222,12 @@
           <p class="sub">Comments are picked by when they were written, so new comments on older posts are still checked.</p>
           <div class="grid">
             <div><label for="lookback_days">Check comments written in the last (days)</label><input id="lookback_days" type="number" min="1" max="30" required><div class="hint" data-default="lookback_days"></div></div>
-            <div><label for="post_lookback_days">Look for them on posts from the last (days)</label><input id="post_lookback_days" type="number" min="1" max="365" required><div class="hint" data-default="post_lookback_days"></div><div class="hint">Comments on posts older than this are missed. Higher means more Facebook requests per run, not more AI tokens.</div></div>
+            <div><label for="post_lookback_days">Look for them on posts from the last (days)</label><input id="post_lookback_days" type="number" min="1" max="365" required><div class="hint" data-default="post_lookback_days"></div><div class="hint">Comments on posts older than this are missed. Higher means more Meta requests per run, not more AI tokens.</div></div>
             <div><label for="max_comments_per_run">Max new comments per page per run</label><input id="max_comments_per_run" type="number" min="1" max="500" required><div class="hint" data-default="max_comments_per_run"></div><div class="hint">Newest first.</div></div>
           </div>
         </section>
         <div class="actions">
-          <button class="btn primary" type="submit">Save settings</button>
+          <button class="btn primary" type="submit" id="save-settings">Save settings</button>
           <button class="btn" type="button" id="reset-settings">Reset to defaults</button>
         </div>
       </form>
@@ -143,7 +237,7 @@
     <div data-panel="prompt" class="hidden">
       <section class="card">
         <h2>System prompt</h2>
-        <p class="sub" id="prompt-status"></p>
+        <p class="sub" id="prompt-status">Loading</p>
         <textarea id="prompt-text" spellcheck="false"></textarea>
         <div class="hint" id="prompt-count"></div>
         <div class="actions">
@@ -166,7 +260,7 @@
     <div data-panel="pages" class="hidden">
       <section class="card">
         <div class="toolbar">
-          <div><h2>Locations</h2><p class="sub" style="margin:0">Disabled locations are refused by the classify endpoint and left out of <code>/pages/active</code>.</p></div>
+          <div><h2>Locations</h2><p class="sub" style="margin:0">Disabled locations are skipped. The Instagram switch controls Instagram comments for that location.</p></div>
           <span class="spacer"></span>
           <button class="btn" id="import-pages">Import pages from Meta</button>
         </div>
@@ -201,22 +295,23 @@
     <div data-panel="environment" class="hidden">
       <section class="card">
         <h2>API keys</h2>
-        <p class="sub">Change these in <code>.env</code> and restart the server.</p>
-        <div class="kv" id="secrets"></div>
+        <p class="sub">Change these in <code>.env</code> (or your host's environment settings) and restart the server.</p>
+        <div class="kv" id="secrets"><div class="muted">Loading</div></div>
       </section>
       <section class="card">
         <h2>Server config</h2>
-        <p class="sub">Read from <code>.env</code> at startup.</p>
-        <div class="kv" id="server"></div>
+        <p class="sub">Read from the environment at startup.</p>
+        <div class="kv" id="server"><div class="muted">Loading</div></div>
       </section>
     </div>
   </main>
 </div>
 
-<div id="toast"></div>
+<div id="toast" role="status"></div>
 
 <script>
-const API = '/admin/api';
+// The portal can be served from any path (ADMIN_PATH); its API sits beside it.
+const API = location.pathname.replace(/\/+$/, '') + '/api';
 const $ = (sel) => document.querySelector(sel);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const NUMBER_FIELDS = ['batch_size', 'max_completion_tokens', 'ai_timeout_seconds', 'lookback_days', 'post_lookback_days', 'max_comments_per_run'];
@@ -227,47 +322,111 @@ function toast(message) {
   el.textContent = message;
   el.classList.add('show');
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => el.classList.remove('show'), 2500);
+  toast.timer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ---------- loading states ----------
+let pendingRequests = 0;
+function trackRequest(delta) {
+  pendingRequests += delta;
+  $('#progress').classList.toggle('on', pendingRequests > 0);
+}
+
+/** A table row shown while the table's data is loading. */
+const loadingRow = (columns) => `<tr><td colspan="${columns}" class="empty"><span class="spinner"></span>Loading</td></tr>`;
+
+/** Run a task with the button disabled and showing a spinner; errors go to a toast. */
+async function act(button, label, task) {
+  const original = button ? button.innerHTML : '';
+  if (button) {
+    button.disabled = true;
+    button.innerHTML = `<span class="spinner"></span>${esc(label)}`;
+  }
+  try {
+    return await task();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = original;
+    }
+  }
 }
 
 async function api(path, options = {}) {
-  const res = await fetch(API + path, {
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-  if (res.status === 401 && path !== '/login') { showLogin(); throw new Error('Not logged in'); }
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const detail = Array.isArray(data.detail) ? data.detail.map((d) => `${d.loc.at(-1)}: ${d.msg}`).join('; ') : data.detail;
-    throw new Error(detail || `Request failed (${res.status})`);
+  trackRequest(1);
+  try {
+    const res = await fetch(API + path, {
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+    });
+    if (res.status === 401 && path !== '/login') { showLogin(); throw new Error('Not signed in'); }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = Array.isArray(data.detail) ? data.detail.map((d) => `${d.loc.at(-1)}: ${d.msg}`).join('; ') : data.detail;
+      throw new Error(detail || `Request failed (${res.status})`);
+    }
+    return data;
+  } finally {
+    trackRequest(-1);
   }
-  return data;
 }
 
-function showLogin() { $('#app').classList.add('hidden'); $('#login').classList.remove('hidden'); $('#password').focus(); }
-function showApp() { $('#login').classList.add('hidden'); $('#app').classList.remove('hidden'); loadTab('settings'); }
+// ---------- sign in / out ----------
+function showLogin() {
+  $('#boot').classList.add('hidden');
+  $('#app').classList.add('hidden');
+  $('#login').classList.remove('hidden');
+  $('#password').focus();
+}
+function showApp() {
+  $('#boot').classList.add('hidden');
+  $('#login').classList.add('hidden');
+  $('#app').classList.remove('hidden');
+  loadTab('settings');
+}
 
 $('#login-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   $('#login-error').textContent = '';
+  const button = $('#login-button');
+  const original = button.innerHTML;
+  button.disabled = true;
+  button.innerHTML = '<span class="spinner"></span>Signing in';
   try {
     await api('/login', { method: 'POST', body: JSON.stringify({ password: $('#password').value }) });
     $('#password').value = '';
     showApp();
-  } catch (error) { $('#login-error').textContent = error.message; }
+  } catch (error) {
+    $('#login-error').textContent = error.message;
+  } finally {
+    button.disabled = false;
+    button.innerHTML = original;
+  }
 });
 
-$('#logout').addEventListener('click', async () => { await api('/logout', { method: 'POST' }); showLogin(); });
+$('#logout').addEventListener('click', (event) => act(event.currentTarget, 'Signing out', async () => {
+  await api('/logout', { method: 'POST' });
+  showLogin();
+}));
 
 // ---------- tabs ----------
 document.querySelectorAll('nav button').forEach((button) => button.addEventListener('click', () => loadTab(button.dataset.tab)));
 
-function loadTab(tab) {
+async function loadTab(tab) {
   document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('[data-panel]').forEach((p) => p.classList.toggle('hidden', p.dataset.panel !== tab));
-  ({ settings: loadSettings, prompt: loadPrompt, pages: loadPages, results: loadResults, environment: loadEnvironment })[tab]()
-    .catch((error) => toast(error.message));
+  const panel = document.querySelector(`[data-panel="${tab}"]`);
+  panel.classList.add('is-loading');
+  try {
+    await ({ settings: loadSettings, prompt: loadPrompt, pages: loadPages, results: loadResults, environment: loadEnvironment })[tab]();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    panel.classList.remove('is-loading');
+  }
 }
 
 // ---------- settings ----------
@@ -282,21 +441,23 @@ function fillSettings(settings) {
   [...NUMBER_FIELDS, ...TEXT_FIELDS].forEach((field) => { $('#' + field).value = settings[field]; });
 }
 
-$('#settings-form').addEventListener('submit', async (event) => {
+$('#settings-form').addEventListener('submit', (event) => {
   event.preventDefault();
   const body = { provider_order: $('#provider_order').value.split(',') };
   NUMBER_FIELDS.forEach((field) => { body[field] = Number($('#' + field).value); });
   TEXT_FIELDS.forEach((field) => { body[field] = $('#' + field).value.trim(); });
-  try {
+  act($('#save-settings'), 'Saving', async () => {
     fillSettings((await api('/settings', { method: 'PUT', body: JSON.stringify(body) })).settings);
     toast('Settings saved');
-  } catch (error) { toast(error.message); }
+  });
 });
 
-$('#reset-settings').addEventListener('click', async () => {
+$('#reset-settings').addEventListener('click', (event) => {
   if (!confirm('Reset all settings to the .env defaults?')) return;
-  fillSettings((await api('/settings/reset', { method: 'POST' })).settings);
-  toast('Settings reset');
+  act(event.currentTarget, 'Resetting', async () => {
+    fillSettings((await api('/settings/reset', { method: 'POST' })).settings);
+    toast('Settings reset');
+  });
 });
 
 // ---------- system prompt ----------
@@ -324,68 +485,75 @@ function updatePromptCount() {
   $('#prompt-count').style.color = length > PROMPT_MAX ? 'var(--danger)' : '';
 }
 
-async function loadPrompt() { renderPrompt(await api('/prompt')); }
+async function loadPrompt() {
+  if (!$('#prompt-versions').children.length) $('#prompt-versions').innerHTML = loadingRow(3);
+  renderPrompt(await api('/prompt'));
+}
 
 $('#prompt-text').addEventListener('input', updatePromptCount);
 
-$('#prompt-save').addEventListener('click', async () => {
-  try {
-    renderPrompt(await api('/prompt', { method: 'PUT', body: JSON.stringify({ content: $('#prompt-text').value }) }));
-    toast('Prompt saved');
-    if (confirm('Prompt saved. Re-check comments that were already classified with the old prompt?\n\nThis clears the cache, so every comment uses tokens again on the next run.')) {
-      const { deleted } = await api('/cache', { method: 'DELETE' });
-      toast(`Cache cleared (${deleted} comments)`);
-    }
-  } catch (error) { toast(error.message); }
-});
+$('#prompt-save').addEventListener('click', (event) => act(event.currentTarget, 'Saving', async () => {
+  renderPrompt(await api('/prompt', { method: 'PUT', body: JSON.stringify({ content: $('#prompt-text').value }) }));
+  toast('Prompt saved');
+  if (confirm('Prompt saved. Re-check comments that were already classified with the old prompt?\n\nThis clears the cache, so every comment uses tokens again on the next run.')) {
+    const { deleted } = await api('/cache', { method: 'DELETE' });
+    toast(`Cache cleared (${deleted} comments)`);
+  }
+}));
 
-$('#prompt-load-default').addEventListener('click', async () => {
+$('#prompt-load-default').addEventListener('click', (event) => act(event.currentTarget, 'Loading', async () => {
   $('#prompt-text').value = (await api('/prompt/default')).content;
   updatePromptCount();
   toast('Built-in prompt loaded into the editor (not saved yet)');
-});
+}));
 
-$('#prompt-reset').addEventListener('click', async () => {
+$('#prompt-reset').addEventListener('click', (event) => {
   if (!confirm('Delete all custom versions and go back to the built-in prompt?')) return;
-  renderPrompt(await api('/prompt/reset', { method: 'POST' }));
-  toast('Using the built-in prompt');
+  act(event.currentTarget, 'Resetting', async () => {
+    renderPrompt(await api('/prompt/reset', { method: 'POST' }));
+    toast('Using the built-in prompt');
+  });
 });
 
-$('#prompt-versions').addEventListener('click', async (event) => {
-  const id = event.target.dataset.version;
-  if (!id) return;
-  $('#prompt-text').value = (await api(`/prompt/versions/${id}`)).content;
-  updatePromptCount();
-  toast('Version loaded into the editor. Save to make it active.');
+$('#prompt-versions').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-version]');
+  if (!button) return;
+  act(button, 'Loading', async () => {
+    $('#prompt-text').value = (await api(`/prompt/versions/${button.dataset.version}`)).content;
+    updatePromptCount();
+    toast('Version loaded into the editor. Save to make it active.');
+  });
 });
 
 // ---------- locations ----------
 let pagesCache = [];
 
 async function loadPages() {
-  pagesCache = await api('/pages');
   const body = $('#pages-body');
+  if (!body.children.length) body.innerHTML = loadingRow(8);
+  pagesCache = await api('/pages');
   if (!pagesCache.length) {
     body.innerHTML = '<tr><td colspan="8" class="empty">No pages saved yet. Click "Import pages from Meta".</td></tr>';
     return;
   }
   body.innerHTML = pagesCache.map((p) => `
     <tr>
-      <td><label class="switch"><input type="checkbox" data-toggle="${esc(p.page_id)}" ${p.is_active ? 'checked' : ''}><span></span></label></td>
-      <td>${esc(p.name)}</td>
-      <td class="muted">${esc(p.page_id)}</td>
+      <td class="tight"><label class="switch"><input type="checkbox" data-toggle="${esc(p.page_id)}" ${p.is_active ? 'checked' : ''}><span></span></label></td>
+      <td class="loc">${esc(p.name)}</td>
+      <td class="id">${esc(p.page_id)}</td>
       <td style="white-space:nowrap">${p.ig_user_id
         ? `<label class="switch" title="Check Instagram comments for this location"><input type="checkbox" data-instagram="${esc(p.page_id)}" ${p.instagram_enabled ? 'checked' : ''}><span></span></label> <span class="muted">@${esc(p.ig_username || p.ig_user_id)}</span>`
         : '<span class="muted" title="No Instagram business account is linked to this page. Link it in Meta Business Suite, then import again.">not linked</span>'}</td>
-      <td><input style="width:120px" type="number" data-location="${esc(p.page_id)}" value="${esc(p.location_id)}" placeholder="—"></td>
+      <td class="tight"><input type="number" data-location="${esc(p.page_id)}" value="${esc(p.location_id)}" placeholder="—"></td>
       <td class="num">${p.checked}</td>
       <td class="num">${p.flagged}</td>
-      <td><button class="btn small danger" data-clear="${esc(p.page_id)}">Clear cache</button></td>
+      <td class="tight"><button class="btn small danger" data-clear="${esc(p.page_id)}">Clear cache</button></td>
     </tr>`).join('');
 }
 
 $('#pages-body').addEventListener('change', async (event) => {
   const el = event.target;
+  el.disabled = true; // no double changes while saving
   try {
     if (el.dataset.toggle) {
       await api(`/pages/${encodeURIComponent(el.dataset.toggle)}`, { method: 'PATCH', body: JSON.stringify({ is_active: el.checked }) });
@@ -398,27 +566,34 @@ $('#pages-body').addEventListener('change', async (event) => {
       await api(`/pages/${encodeURIComponent(el.dataset.location)}`, { method: 'PATCH', body: JSON.stringify({ location_id: value }) });
       toast('Location ID saved');
     }
-  } catch (error) { toast(error.message); loadPages(); }
+  } catch (error) {
+    toast(error.message);
+    loadPages().catch(() => {});
+  } finally {
+    el.disabled = false;
+  }
 });
 
-$('#pages-body').addEventListener('click', async (event) => {
-  const pageId = event.target.dataset.clear;
-  if (!pageId || !confirm('Forget every checked comment for this location? They will be re-checked (and use tokens) on the next run.')) return;
-  const { deleted } = await api(`/cache?page_id=${encodeURIComponent(pageId)}`, { method: 'DELETE' });
-  toast(`Cleared ${deleted} comments`);
-  loadPages();
+$('#pages-body').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-clear]');
+  if (!button || !confirm('Forget every checked comment for this location? They will be re-checked (and use tokens) on the next run.')) return;
+  act(button, 'Clearing', async () => {
+    const { deleted } = await api(`/cache?page_id=${encodeURIComponent(button.dataset.clear)}`, { method: 'DELETE' });
+    toast(`Cleared ${deleted} comments`);
+    await loadPages();
+  });
 });
 
-$('#import-pages').addEventListener('click', async () => {
-  try {
-    const { imported, instagram_linked } = await api('/pages/import', { method: 'POST' });
-    toast(`Imported ${imported} pages (${instagram_linked} with Instagram)`);
-    loadPages();
-  } catch (error) { toast(error.message); }
-});
+$('#import-pages').addEventListener('click', (event) => act(event.currentTarget, 'Importing', async () => {
+  const { imported, instagram_linked } = await api('/pages/import', { method: 'POST' });
+  toast(`Imported ${imported} pages (${instagram_linked} with Instagram)`);
+  await loadPages();
+}));
 
 // ---------- results ----------
 async function loadResults() {
+  const body = $('#results-body');
+  body.innerHTML = loadingRow(7);
   if (!pagesCache.length) pagesCache = await api('/pages');
   const pageSelect = $('#filter-page');
   const selected = pageSelect.value;
@@ -430,7 +605,6 @@ async function loadResults() {
   if (pageSelect.value) params.set('page_id', pageSelect.value);
   if ($('#filter-type').value) params.set('type', $('#filter-type').value);
   const rows = await api('/results?' + params);
-  const body = $('#results-body');
   if (!rows.length) { body.innerHTML = '<tr><td colspan="7" class="empty">No flagged comments.</td></tr>'; return; }
   body.innerHTML = rows.map((r) => `
     <tr>
@@ -444,22 +618,30 @@ async function loadResults() {
     </tr>`).join('');
 }
 
-$('#filter-page').addEventListener('change', () => loadResults().catch((e) => toast(e.message)));
-$('#filter-type').addEventListener('change', () => loadResults().catch((e) => toast(e.message)));
+const reloadResults = () => loadResults().catch((error) => {
+  $('#results-body').innerHTML = '<tr><td colspan="7" class="empty">Could not load results.</td></tr>';
+  toast(error.message);
+});
+$('#filter-page').addEventListener('change', reloadResults);
+$('#filter-type').addEventListener('change', reloadResults);
 
-$('#results-body').addEventListener('click', async (event) => {
-  const commentId = event.target.dataset.recheck;
-  if (!commentId) return;
-  await api(`/results/${encodeURIComponent(commentId)}`, { method: 'DELETE' });
-  toast('Will be re-checked on the next run');
-  loadResults();
+$('#results-body').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-recheck]');
+  if (!button) return;
+  act(button, 'Working', async () => {
+    await api(`/results/${encodeURIComponent(button.dataset.recheck)}`, { method: 'DELETE' });
+    toast('Will be re-checked on the next run');
+    await loadResults();
+  });
 });
 
-$('#clear-all').addEventListener('click', async () => {
+$('#clear-all').addEventListener('click', (event) => {
   if (!confirm('Forget ALL checked comments? Every comment will be re-checked (and use tokens) on the next run.')) return;
-  const { deleted } = await api('/cache', { method: 'DELETE' });
-  toast(`Cleared ${deleted} comments`);
-  loadResults();
+  act(event.currentTarget, 'Clearing', async () => {
+    const { deleted } = await api('/cache', { method: 'DELETE' });
+    toast(`Cleared ${deleted} comments`);
+    await loadResults();
+  });
 });
 
 // ---------- environment ----------
@@ -472,7 +654,8 @@ async function loadEnvironment() {
 }
 
 // ---------- boot ----------
-api('/me').then(showApp).catch(() => {});
+// Signed in → portal; not signed in (or unreachable) → sign-in screen.
+api('/me').then(showApp).catch(showLogin);
 </script>
 </body>
 </html>
