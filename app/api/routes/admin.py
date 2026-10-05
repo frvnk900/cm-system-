@@ -12,6 +12,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app.api.db.admin_users_ import (
+	add_admin,
+	count_active_admins,
+	get_admin,
+	list_admins,
+	normalize_email,
+	record_sign_in,
+	remove_admin,
+)
 from app.api.db.app_settings_ import (
 	load_runtime_settings,
 	reset_runtime_settings,
@@ -30,8 +39,10 @@ from app.api.schema.classified_comment_model import ClassifiedComment
 from app.api.schema.pages_model import Page, PageCreate
 from app.api.schema.system_prompt_model import SystemPromptVersion
 from app.core.settings import RuntimeSettings, default_runtime_settings, get_settings
+from app.services import supabase_auth
 from app.services.get_pages_ import MetaAPIError
 from app.services.instagram_ import get_pages_with_instagram, instagram_account_of
+from app.services.supabase_auth import SupabaseAuthError, SupabaseNotConfigured
 from app.services.prompt.system_prompt import SYSTEM_PROMPT
 
 
@@ -45,6 +56,8 @@ SESSION_COOKIE = "admin_session"
 _FALLBACK_SECRET = secrets.token_urlsafe(32)
 MAX_LOGIN_FAILURES = 5
 LOGIN_LOCKOUT_SECONDS = 15 * 60
+PASSWORD_MIN = 8
+PASSWORD_MAX = 72
 _login_failures: dict[str, deque[float]] = defaultdict(deque)
 
 
@@ -55,14 +68,44 @@ def _serializer() -> URLSafeTimedSerializer:
 	return URLSafeTimedSerializer(secret, salt="admin-session")
 
 
-def require_admin(request: Request) -> None:
+class AdminIdentity(BaseModel):
+	"""Who is signed in. ``email`` is None for the one-time setup session."""
+
+	email: str | None = None
+
+	@property
+	def is_setup(self) -> bool:
+		return self.email is None
+
+	@property
+	def label(self) -> str:
+		return self.email or "first-time setup"
+
+
+def setup_login_allowed(database: Session) -> bool:
+	"""The shared ADMIN_PASSWORD works only until one admin account is active."""
+	return bool(get_settings().admin_password) and count_active_admins(database) == 0
+
+
+def require_admin(request: Request, database: Session = Depends(get_db)) -> AdminIdentity:
 	token = request.cookies.get(SESSION_COOKIE)
 	if not token:
-		raise HTTPException(status_code=401, detail="Not logged in")
+		raise HTTPException(status_code=401, detail="Not signed in")
 	try:
-		_serializer().loads(token, max_age=get_settings().admin_session_hours * 3600)
+		payload = _serializer().loads(token, max_age=get_settings().admin_session_hours * 3600)
 	except BadSignature as error:
 		raise HTTPException(status_code=401, detail="Session expired") from error
+
+	email = payload.get("email") if isinstance(payload, dict) else None
+	if email:
+		# Checked on every request, so a removed admin is locked out at once.
+		if get_admin(database, email) is None:
+			raise HTTPException(status_code=401, detail="This account no longer has access")
+		return AdminIdentity(email=email)
+	# A setup session (shared password) ends as soon as a real account exists.
+	if not setup_login_allowed(database):
+		raise HTTPException(status_code=401, detail="Setup is finished; sign in with your account")
+	return AdminIdentity()
 
 
 def _recent_failures(client_ip: str) -> deque[float]:
@@ -73,8 +116,57 @@ def _recent_failures(client_ip: str) -> deque[float]:
 	return failures
 
 
+def _client_ip(request: Request) -> str:
+	return request.client.host if request.client else "unknown"
+
+
+def _guard_attempts(request: Request) -> deque[float]:
+	"""Shared limiter for sign-in, password links and set-password attempts."""
+	failures = _recent_failures(_client_ip(request))
+	if len(failures) >= MAX_LOGIN_FAILURES:
+		raise HTTPException(status_code=429, detail="Too many attempts; try again later")
+	return failures
+
+
+def _start_session(response: Response, request: Request, email: str | None) -> None:
+	response.set_cookie(
+		SESSION_COOKIE,
+		_serializer().dumps({"email": email}),
+		max_age=get_settings().admin_session_hours * 3600,
+		httponly=True,
+		samesite="strict",
+		secure=request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https",
+		path=ADMIN_PATH,
+	)
+
+
+def _portal_url(request: Request) -> str:
+	"""Public address of the portal, used as the target of emailed links."""
+	base = get_settings().public_base_url
+	if not base:
+		scheme = request.headers.get("x-forwarded-proto") or request.url.scheme
+		# The Host header has already been checked by TrustedHostMiddleware.
+		base = f"{scheme}://{request.headers.get('host', request.url.netloc)}"
+	return base.rstrip("/") + ADMIN_PATH
+
+
 class LoginRequest(BaseModel):
+	email: str | None = None
 	password: str
+
+
+class EmailRequest(BaseModel):
+	email: str = Field(min_length=3, max_length=320, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+class SetPasswordRequest(BaseModel):
+	access_token: str = Field(min_length=10)
+	password: str = Field(min_length=PASSWORD_MIN, max_length=PASSWORD_MAX)
+
+
+class ChangePasswordRequest(BaseModel):
+	current_password: str
+	new_password: str = Field(min_length=PASSWORD_MIN, max_length=PASSWORD_MAX)
 
 
 @router.get("")
@@ -82,33 +174,108 @@ def admin_page() -> FileResponse:
 	return FileResponse(ADMIN_PAGE)
 
 
+@router.get("/api/auth/status")
+def auth_status(database: Session = Depends(get_db)) -> dict:
+	"""What the sign-in screen should show."""
+	return {
+		"setup": setup_login_allowed(database),
+		"accounts_ready": supabase_auth.is_configured(),
+		"password_min": PASSWORD_MIN,
+	}
+
+
 @router.post("/api/login")
-def login(body: LoginRequest, request: Request, response: Response) -> dict:
-	admin_password = get_settings().admin_password
-	if not admin_password:
-		raise HTTPException(status_code=503, detail="ADMIN_PASSWORD is not set in .env")
+def login(
+	body: LoginRequest,
+	request: Request,
+	response: Response,
+	database: Session = Depends(get_db),
+) -> dict:
+	failures = _guard_attempts(request)
 
-	client_ip = request.client.host if request.client else "unknown"
-	failures = _recent_failures(client_ip)
-	if len(failures) >= MAX_LOGIN_FAILURES:
-		raise HTTPException(status_code=429, detail="Too many attempts; try again later")
+	if not body.email:
+		# One-time setup with the shared password, until an account exists.
+		admin_password = get_settings().admin_password
+		if not setup_login_allowed(database) or not admin_password:
+			raise HTTPException(status_code=403, detail="Sign in with your email and password")
+		if not hmac.compare_digest(body.password.encode(), admin_password.encode()):
+			failures.append(time.monotonic())
+			logger.warning("Failed setup login from %s", _client_ip(request))
+			raise HTTPException(status_code=401, detail="Wrong password")
+		failures.clear()
+		_start_session(response, request, None)
+		return {"ok": True, "setup": True}
 
-	if not hmac.compare_digest(body.password.encode(), admin_password.encode()):
+	email = normalize_email(body.email)
+	admin = get_admin(database, email)
+	try:
+		# Same error whether the email is unknown or the password is wrong.
+		if admin is None:
+			raise SupabaseAuthError("not an admin", code="invalid_credentials", status=400)
+		supabase_auth.sign_in(email, body.password)
+	except SupabaseNotConfigured as error:
+		raise HTTPException(status_code=503, detail=str(error)) from error
+	except SupabaseAuthError as error:
+		if error.status and error.status >= 500:
+			raise HTTPException(status_code=503, detail="The sign-in service is unavailable") from error
 		failures.append(time.monotonic())
-		logger.warning("Failed admin login from %s", client_ip)
-		raise HTTPException(status_code=401, detail="Wrong password")
+		logger.warning("Failed admin login for %s from %s", email, _client_ip(request))
+		raise HTTPException(status_code=401, detail="Wrong email or password") from error
 
 	failures.clear()
-	response.set_cookie(
-		SESSION_COOKIE,
-		_serializer().dumps("admin"),
-		max_age=get_settings().admin_session_hours * 3600,
-		httponly=True,
-		samesite="strict",
-		secure=request.url.scheme == "https",
-		path=ADMIN_PATH,
-	)
+	record_sign_in(database, admin)
+	_start_session(response, request, email)
+	return {"ok": True, "email": email}
+
+
+@router.post("/api/password/forgot")
+def forgot_password(
+	body: EmailRequest, request: Request, database: Session = Depends(get_db)
+) -> dict:
+	"""Email a set-password link, if the address belongs to an admin."""
+	failures = _guard_attempts(request)
+	failures.append(time.monotonic())  # limits how many emails one visitor can trigger
+	email = normalize_email(body.email)
+	if get_admin(database, email) is not None:
+		try:
+			supabase_auth.send_password_link(email, _portal_url(request))
+		except SupabaseAuthError as error:
+			logger.warning("Password link for %s failed: %s", email, error)
+	# Same answer either way, so this can't be used to discover who is an admin.
 	return {"ok": True}
+
+
+@router.post("/api/password/set")
+def set_password(
+	body: SetPasswordRequest,
+	request: Request,
+	response: Response,
+	database: Session = Depends(get_db),
+) -> dict:
+	"""Finish an invitation or password reset: choose a password and sign in."""
+	failures = _guard_attempts(request)
+	try:
+		user = supabase_auth.get_user(body.access_token)
+		email = normalize_email(str(user.get("email") or ""))
+		admin = get_admin(database, email) if email else None
+		if admin is None:
+			raise HTTPException(status_code=403, detail="This account does not have admin access")
+		supabase_auth.set_password(body.access_token, body.password)
+	except SupabaseNotConfigured as error:
+		raise HTTPException(status_code=503, detail=str(error)) from error
+	except SupabaseAuthError as error:
+		failures.append(time.monotonic())
+		if error.code == "same_password":
+			raise HTTPException(status_code=400, detail="Choose a password you have not used before") from error
+		if error.code == "weak_password":
+			raise HTTPException(status_code=400, detail=str(error)) from error
+		raise HTTPException(
+			status_code=400, detail="This link is invalid or has expired. Ask for a new one."
+		) from error
+
+	record_sign_in(database, admin)
+	_start_session(response, request, email)
+	return {"ok": True, "email": email}
 
 
 @router.post("/api/logout")
@@ -117,8 +284,128 @@ def logout(response: Response) -> dict:
 	return {"ok": True}
 
 
-@router.get("/api/me", dependencies=[Depends(require_admin)])
-def me() -> dict:
+@router.get("/api/me")
+def me(identity: AdminIdentity = Depends(require_admin)) -> dict:
+	return {"ok": True, "email": identity.email, "setup": identity.is_setup}
+
+
+# ---------- admins ----------
+
+def _send_invitation(email: str, request: Request) -> str:
+	"""Invite a new person, or send a set-password link if they already have a login."""
+	target = _portal_url(request)
+	try:
+		supabase_auth.invite(email, target)
+		return "invited"
+	except SupabaseAuthError as error:
+		if error.code != "email_exists" and "already" not in str(error).lower():
+			raise
+	supabase_auth.send_password_link(email, target)
+	return "password link sent"
+
+
+@router.get("/api/admins")
+def list_admin_users(
+	identity: AdminIdentity = Depends(require_admin), database: Session = Depends(get_db)
+) -> dict:
+	return {
+		"you": identity.email,
+		"setup": identity.is_setup,
+		"accounts_ready": supabase_auth.is_configured(),
+		"admins": [
+			{
+				"email": admin.email,
+				"status": "active" if admin.activated_at else "invited",
+				"invited_by": admin.invited_by,
+				"created_at": admin.created_at.isoformat() if admin.created_at else None,
+				"last_login_at": admin.last_login_at.isoformat() if admin.last_login_at else None,
+			}
+			for admin in list_admins(database)
+		],
+	}
+
+
+@router.post("/api/admins")
+def invite_admin(
+	body: EmailRequest,
+	request: Request,
+	identity: AdminIdentity = Depends(require_admin),
+	database: Session = Depends(get_db),
+) -> dict:
+	"""Add an admin: they get an email with a link to choose their password."""
+	email = normalize_email(body.email)
+	if get_admin(database, email) is not None:
+		raise HTTPException(status_code=409, detail="That email is already an admin")
+	if not supabase_auth.is_configured():
+		raise HTTPException(status_code=503, detail="Supabase Auth is not configured on the server")
+	try:
+		outcome = _send_invitation(email, request)
+	except SupabaseAuthError as error:
+		logger.warning("Invitation for %s failed: %s", email, error)
+		raise HTTPException(status_code=502, detail=f"The invitation could not be sent: {error}") from error
+	add_admin(database, email, invited_by=identity.label)
+	logger.info("Admin %s invited by %s", email, identity.label)
+	return {"email": email, "outcome": outcome}
+
+
+@router.post("/api/admins/{email}/resend")
+def resend_invitation(
+	email: str,
+	request: Request,
+	identity: AdminIdentity = Depends(require_admin),
+	database: Session = Depends(get_db),
+) -> dict:
+	admin = get_admin(database, email)
+	if admin is None:
+		raise HTTPException(status_code=404, detail="No such admin")
+	try:
+		outcome = _send_invitation(admin.email, request)
+	except SupabaseAuthError as error:
+		raise HTTPException(status_code=502, detail=f"The email could not be sent: {error}") from error
+	return {"email": admin.email, "outcome": outcome}
+
+
+@router.delete("/api/admins/{email}")
+def remove_admin_user(
+	email: str,
+	identity: AdminIdentity = Depends(require_admin),
+	database: Session = Depends(get_db),
+) -> dict:
+	admin = get_admin(database, email)
+	if admin is None:
+		raise HTTPException(status_code=404, detail="No such admin")
+	if admin.email == identity.email:
+		raise HTTPException(status_code=400, detail="You can't remove your own account")
+	if admin.activated_at is not None and count_active_admins(database) <= 1:
+		raise HTTPException(status_code=400, detail="You can't remove the last admin")
+	remove_admin(database, admin)
+	logger.info("Admin %s removed by %s", admin.email, identity.label)
+	return {"removed": admin.email}
+
+
+@router.post("/api/account/password")
+def change_password(
+	body: ChangePasswordRequest,
+	request: Request,
+	identity: AdminIdentity = Depends(require_admin),
+) -> dict:
+	"""Change the signed-in admin's own password (needs the current one)."""
+	if identity.is_setup:
+		raise HTTPException(status_code=400, detail="Create your account first")
+	failures = _guard_attempts(request)
+	try:
+		session = supabase_auth.sign_in(identity.email, body.current_password)
+	except SupabaseNotConfigured as error:
+		raise HTTPException(status_code=503, detail=str(error)) from error
+	except SupabaseAuthError as error:
+		failures.append(time.monotonic())
+		raise HTTPException(status_code=400, detail="Your current password is wrong") from error
+	try:
+		supabase_auth.set_password(str(session.get("access_token") or ""), body.new_password)
+	except SupabaseAuthError as error:
+		if error.code == "same_password":
+			raise HTTPException(status_code=400, detail="The new password must be different") from error
+		raise HTTPException(status_code=400, detail=f"The password could not be changed: {error}") from error
 	return {"ok": True}
 
 

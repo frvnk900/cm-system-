@@ -31,6 +31,7 @@ from app.api.schema import classified_comment_model  # noqa: E402,F401
 from app.api.schema import app_settings_model  # noqa: E402,F401
 from app.api.schema import system_prompt_model  # noqa: E402,F401
 from app.api.schema import comment_sentiment_model  # noqa: E402,F401
+from app.api.schema import admin_user_model  # noqa: E402,F401
 
 
 # Serverless instances should not hold pooled connections; Supabase's

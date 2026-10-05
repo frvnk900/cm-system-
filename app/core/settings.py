@@ -35,6 +35,25 @@ class Settings(BaseSettings):
 			raise ValueError("ADMIN_PATH must look like /my-portal (letters, digits, - and _)")
 		return path
 
+	# Supabase Auth holds the admin portal's accounts. The older variable
+	# names already used in this project's .env are accepted too.
+	supabase_url: str | None = Field(
+		None, validation_alias=AliasChoices("SUPABASE_URL", "SUPABASE_DB_URL")
+	)
+	supabase_anon_key: str | None = Field(
+		None,
+		validation_alias=AliasChoices(
+			"SUPABASE_ANON_KEY",
+			"SUPABASE_PUBLISHABLE_KEY",
+			"SUPABASE_DB_PUBLISHABLE_KEY",
+			"SUPABASE_DB_PUBLISHE_KEY",
+		),
+	)
+	supabase_service_role_key: str | None = None
+	# Public address of this service, used in emailed sign-in links
+	# (e.g. https://your-app.vercel.app). Detected from the request if unset.
+	public_base_url: str | None = None
+
 	# Server config: shown read-only in the admin portal.
 	meta_graph_version: str = Field(
 		"v23.0",

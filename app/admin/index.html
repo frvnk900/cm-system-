@@ -6,19 +6,49 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Zawadie · Admin</title>
 <link rel="icon" type="image/png" href="/favicon.png">
+<script>
+  // Apply a saved theme before the page paints, so there is no flash.
+  try {
+    const saved = localStorage.getItem('zawadie-theme');
+    if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved;
+  } catch (error) { /* storage unavailable: follow the device */ }
+</script>
 <style>
-  /* Same flat theme as the public landing page. */
+  /* Same flat theme as the public landing page. Light is the default; dark
+     applies when the device prefers it, unless the toggle has picked a theme. */
   :root {
     --bg: #ffffff; --ink: #0f1115; --text: #3d434d; --muted: #6b727d;
     --line: #e3e5e8; --panel: #f7f8f9; --accent: #0b5cad;
     --ok: #1a7f4b; --danger: #b42318; --warn: #9a6700;
+    color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --bg: #0e1013; --ink: #f2f3f5; --text: #b9bec6; --muted: #868d98;
       --line: #23272e; --panel: #14171b; --accent: #6aa9e9;
       --ok: #4cc38a; --danger: #f97066; --warn: #e2b53a;
+      color-scheme: dark;
     }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1013; --ink: #f2f3f5; --text: #b9bec6; --muted: #868d98;
+    --line: #23272e; --panel: #14171b; --accent: #6aa9e9;
+    --ok: #4cc38a; --danger: #f97066; --warn: #e2b53a;
+    color-scheme: dark;
+  }
+
+  /* Theme toggle: shows the icon of the theme you would switch to. */
+  .theme-toggle { display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 1px solid var(--line);
+    border-radius: 6px; background: var(--bg); color: var(--text); cursor: pointer; }
+  .theme-toggle:hover { border-color: var(--muted); color: var(--ink); }
+  .theme-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .theme-toggle svg { width: 16px; height: 16px; }
+  .theme-toggle .sun { display: none; }
+  :root[data-theme="dark"] .theme-toggle .sun { display: block; }
+  :root[data-theme="dark"] .theme-toggle .moon { display: none; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .theme-toggle .sun { display: block; }
+    :root:not([data-theme="light"]) .theme-toggle .moon { display: none; }
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; }
@@ -120,7 +150,11 @@
   .center h1 { color: var(--ink); font-size: 24px; letter-spacing: -.02em; margin: 0 0 6px; }
   .center .card { margin-top: 24px; }
   #boot { color: var(--muted); text-align: center; padding-top: 30vh; }
-  #login-error { color: var(--danger); min-height: 18px; }
+  .auth-error { color: var(--danger); min-height: 18px; }
+  .center [data-view] > .hint { margin-top: 16px; }
+  section.notice { border-color: var(--accent); background: var(--panel); }
+  #whoami { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 640px) { #whoami { display: none; } }
 
   #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px;
     border-radius: 6px; font-weight: 500; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100vw - 32px); }
@@ -146,20 +180,85 @@
         <img src="/logo.png" alt="" width="24" height="28">
         Zawadie
       </a>
-      <a class="link" href="/">Back to site</a>
+      <div class="right">
+        <a class="link" href="/">Back to site</a>
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch between light and dark theme" title="Switch theme">
+          <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg>
+          <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+      </div>
     </div>
   </div>
   <div class="center">
-    <h1>Sign in</h1>
-    <p class="sub" style="margin:0">Admin access for the moderation service.</p>
-    <section class="card">
-      <form id="login-form">
-        <label for="password">Password</label>
-        <input id="password" type="password" autocomplete="current-password" required>
-        <p id="login-error" class="hint" role="alert"></p>
-        <div class="actions" style="margin-top:8px"><button class="btn primary" type="submit" id="login-button">Sign in</button></div>
-      </form>
-    </section>
+    <!-- Normal sign-in: email + password -->
+    <div data-view="signin" class="hidden">
+      <h1>Sign in</h1>
+      <p class="sub" style="margin:0">Admin access for the moderation service.</p>
+      <section class="card">
+        <form id="login-form">
+          <label for="email">Email</label>
+          <input id="email" type="email" autocomplete="username" required>
+          <label for="password" style="margin-top:14px">Password</label>
+          <input id="password" type="password" autocomplete="current-password" required>
+          <p class="hint auth-error" role="alert"></p>
+          <div class="actions" style="margin-top:8px"><button class="btn primary" type="submit">Sign in</button></div>
+        </form>
+      </section>
+      <p class="hint"><a href="#" data-goto="forgot">First time here, or forgot your password?</a></p>
+    </div>
+
+    <!-- Ask for a set-password link -->
+    <div data-view="forgot" class="hidden">
+      <h1>Get a sign-in link</h1>
+      <p class="sub" style="margin:0">Enter your email. If it belongs to an admin, we'll send a link to choose a password.</p>
+      <section class="card">
+        <form id="forgot-form">
+          <label for="forgot-email">Email</label>
+          <input id="forgot-email" type="email" autocomplete="username" required>
+          <p class="hint auth-error" role="alert"></p>
+          <div class="actions" style="margin-top:8px"><button class="btn primary" type="submit">Send link</button></div>
+        </form>
+      </section>
+      <p class="hint"><a href="#" data-goto="signin">Back to sign in</a></p>
+    </div>
+
+    <!-- Link sent -->
+    <div data-view="sent" class="hidden">
+      <h1>Check your email</h1>
+      <p class="sub" style="margin:0">If that address belongs to an admin, a link is on its way. It can take a minute, and may land in spam. The link works once.</p>
+      <p class="hint" style="margin-top:20px"><a href="#" data-goto="signin">Back to sign in</a></p>
+    </div>
+
+    <!-- Arrived from an emailed link: choose a password -->
+    <div data-view="setpassword" class="hidden">
+      <h1>Choose your password</h1>
+      <p class="sub" style="margin:0">You'll use it with your email to sign in from now on.</p>
+      <section class="card">
+        <form id="setpassword-form">
+          <label for="new-password">New password</label>
+          <input id="new-password" type="password" autocomplete="new-password" required>
+          <div class="hint" data-password-rule></div>
+          <label for="new-password-2" style="margin-top:14px">Repeat password</label>
+          <input id="new-password-2" type="password" autocomplete="new-password" required>
+          <p class="hint auth-error" role="alert"></p>
+          <div class="actions" style="margin-top:8px"><button class="btn primary" type="submit">Save and sign in</button></div>
+        </form>
+      </section>
+    </div>
+
+    <!-- First-time setup: no admin account exists yet -->
+    <div data-view="setup" class="hidden">
+      <h1>First-time setup</h1>
+      <p class="sub" style="margin:0">No admin accounts exist yet. Enter the setup password to create the first one. It stops working once an account is set up.</p>
+      <section class="card">
+        <form id="setup-form">
+          <label for="setup-password">Setup password</label>
+          <input id="setup-password" type="password" autocomplete="off" required>
+          <p class="hint auth-error" role="alert"></p>
+          <div class="actions" style="margin-top:8px"><button class="btn primary" type="submit">Continue</button></div>
+        </form>
+      </section>
+    </div>
   </div>
 </div>
 
@@ -172,7 +271,12 @@
         Zawadie <small>Admin</small>
       </a>
       <div class="right">
+        <span class="link" id="whoami"></span>
         <a class="link" href="/">View site</a>
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch between light and dark theme" title="Switch theme">
+          <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg>
+          <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
         <button class="btn small" id="logout">Sign out</button>
       </div>
     </div>
@@ -184,6 +288,7 @@
       <button data-tab="pages">Locations</button>
       <button data-tab="results">Flagged comments</button>
       <button data-tab="environment">Keys &amp; server</button>
+      <button data-tab="admins">Admins</button>
     </div>
   </nav>
   <main class="wrap">
@@ -304,6 +409,46 @@
         <div class="kv" id="server"><div class="muted">Loading</div></div>
       </section>
     </div>
+
+    <!-- Admins -->
+    <div data-panel="admins" class="hidden">
+      <section class="card notice hidden" id="setup-notice">
+        <h2>Create your admin account</h2>
+        <p class="sub" style="margin:0">You're signed in with the setup password. Invite <strong>your own email</strong> below, open the link in the email and choose a password. After that, the setup password stops working and everyone signs in with their own account.</p>
+      </section>
+      <section class="card notice hidden" id="accounts-notice">
+        <h2>Accounts are not configured</h2>
+        <p class="sub" style="margin:0">The server is missing its Supabase settings (<code>SUPABASE_URL</code>, the publishable key and <code>SUPABASE_SERVICE_ROLE_KEY</code>), so invitations can't be sent.</p>
+      </section>
+
+      <section class="card">
+        <div class="toolbar">
+          <div><h2>Admins</h2><p class="sub" style="margin:0">Everyone here can use this portal and add or remove other admins.</p></div>
+        </div>
+        <form id="invite-form" class="toolbar">
+          <input id="invite-email" type="email" placeholder="name@company.com" required style="max-width:320px" aria-label="Email to invite">
+          <button class="btn primary" type="submit" id="invite-button">Send invitation</button>
+        </form>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Email</th><th>Status</th><th>Added by</th><th>Last sign-in</th><th></th></tr></thead>
+          <tbody id="admins-body"></tbody>
+        </table></div>
+        <p class="hint" style="margin-top:12px">An invited person gets an email with a link to choose their own password. The link works once; use "Resend" if it expired.</p>
+      </section>
+
+      <section class="card" id="account-card">
+        <h2>Your password</h2>
+        <p class="sub">Signed in as <strong id="account-email"></strong>.</p>
+        <form id="password-form">
+          <div class="grid">
+            <div><label for="current-password">Current password</label><input id="current-password" type="password" autocomplete="current-password" required></div>
+            <div><label for="change-password">New password</label><input id="change-password" type="password" autocomplete="new-password" required><div class="hint" data-password-rule></div></div>
+            <div><label for="change-password-2">Repeat new password</label><input id="change-password-2" type="password" autocomplete="new-password" required></div>
+          </div>
+          <div class="actions"><button class="btn primary" type="submit" id="password-button">Change password</button></div>
+        </form>
+      </section>
+    </div>
   </main>
 </div>
 
@@ -324,6 +469,17 @@ function toast(message) {
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => el.classList.remove('show'), 3000);
 }
+
+// ---------- theme ----------
+// The first click overrides the device's setting; the choice is remembered in this browser.
+document.querySelectorAll('[data-theme-toggle]').forEach((button) => button.addEventListener('click', () => {
+  const root = document.documentElement;
+  const isDark = root.dataset.theme
+    ? root.dataset.theme === 'dark'
+    : window.matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme = isDark ? 'light' : 'dark';
+  try { localStorage.setItem('zawadie-theme', root.dataset.theme); } catch (error) { /* not remembered */ }
+}));
 
 // ---------- loading states ----------
 let pendingRequests = 0;
@@ -362,8 +518,12 @@ async function api(path, options = {}) {
       headers: { 'Content-Type': 'application/json' },
       ...options,
     });
-    if (res.status === 401 && path !== '/login') { showLogin(); throw new Error('Not signed in'); }
     const data = await res.json().catch(() => ({}));
+    // A 401 on a protected call means the session ended; sign-in calls report their own errors.
+    if (res.status === 401 && !/^\/(login|password|auth)/.test(path)) {
+      showLogin();
+      throw new Error(data.detail || 'Not signed in');
+    }
     if (!res.ok) {
       const detail = Array.isArray(data.detail) ? data.detail.map((d) => `${d.loc.at(-1)}: ${d.msg}`).join('; ') : data.detail;
       throw new Error(detail || `Request failed (${res.status})`);
@@ -375,41 +535,108 @@ async function api(path, options = {}) {
 }
 
 // ---------- sign in / out ----------
-function showLogin() {
+let pendingToken = null;  // from an emailed link, kept in memory until a password is chosen
+let passwordMin = 8;
+let currentUser = { email: null, setup: false };
+
+/** Show one of the signed-out screens: signin, forgot, sent, setpassword, setup. */
+function showView(view, message = '') {
   $('#boot').classList.add('hidden');
   $('#app').classList.add('hidden');
   $('#login').classList.remove('hidden');
-  $('#password').focus();
+  document.querySelectorAll('#login [data-view]').forEach((el) => el.classList.toggle('hidden', el.dataset.view !== view));
+  document.querySelectorAll('[data-password-rule]').forEach((el) => { el.textContent = `At least ${passwordMin} characters.`; });
+  const active = document.querySelector(`#login [data-view="${view}"]`);
+  const error = active.querySelector('.auth-error');
+  if (error) error.textContent = message;
+  const firstInput = active.querySelector('input');
+  if (firstInput) firstInput.focus();
 }
-function showApp() {
+
+/** Pick the right signed-out screen: finish a link, first-time setup, or normal sign-in. */
+async function showLogin(message = '') {
+  let status = { setup: false };
+  try {
+    status = await api('/auth/status');
+    passwordMin = status.password_min || passwordMin;
+  } catch (error) { /* fall back to the normal sign-in form */ }
+  if (pendingToken) return showView('setpassword', message);
+  showView(status.setup ? 'setup' : 'signin', message);
+}
+
+function showApp(me) {
+  currentUser = { email: me.email || null, setup: Boolean(me.setup) };
+  $('#whoami').textContent = currentUser.setup ? 'First-time setup' : currentUser.email;
   $('#boot').classList.add('hidden');
   $('#login').classList.add('hidden');
   $('#app').classList.remove('hidden');
-  loadTab('settings');
+  // During setup the only useful thing to do is create the first account.
+  loadTab(currentUser.setup ? 'admins' : 'settings');
 }
 
-$('#login-form').addEventListener('submit', async (event) => {
-  event.preventDefault();
-  $('#login-error').textContent = '';
-  const button = $('#login-button');
-  const original = button.innerHTML;
-  button.disabled = true;
-  button.innerHTML = '<span class="spinner"></span>Signing in';
-  try {
-    await api('/login', { method: 'POST', body: JSON.stringify({ password: $('#password').value }) });
-    $('#password').value = '';
-    showApp();
-  } catch (error) {
-    $('#login-error').textContent = error.message;
-  } finally {
-    button.disabled = false;
-    button.innerHTML = original;
-  }
+async function enterPortal() {
+  showApp(await api('/me'));
+}
+
+/** Wire a signed-out form: spinner on its button, errors under its fields. */
+function authForm(selector, busyLabel, task) {
+  const form = $(selector);
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const error = form.querySelector('.auth-error');
+    const button = form.querySelector('button[type="submit"]');
+    const original = button.innerHTML;
+    error.textContent = '';
+    button.disabled = true;
+    button.innerHTML = `<span class="spinner"></span>${busyLabel}`;
+    try {
+      await task();
+    } catch (failure) {
+      error.textContent = failure.message;
+    } finally {
+      button.disabled = false;
+      button.innerHTML = original;
+    }
+  });
+}
+
+authForm('#login-form', 'Signing in', async () => {
+  await api('/login', { method: 'POST', body: JSON.stringify({ email: $('#email').value.trim(), password: $('#password').value }) });
+  $('#password').value = '';
+  await enterPortal();
 });
+
+authForm('#setup-form', 'Checking', async () => {
+  await api('/login', { method: 'POST', body: JSON.stringify({ password: $('#setup-password').value }) });
+  $('#setup-password').value = '';
+  await enterPortal();
+});
+
+authForm('#forgot-form', 'Sending', async () => {
+  await api('/password/forgot', { method: 'POST', body: JSON.stringify({ email: $('#forgot-email').value.trim() }) });
+  showView('sent');
+});
+
+authForm('#setpassword-form', 'Saving', async () => {
+  const password = $('#new-password').value;
+  if (password.length < passwordMin) throw new Error(`Use at least ${passwordMin} characters.`);
+  if (password !== $('#new-password-2').value) throw new Error('The two passwords do not match.');
+  await api('/password/set', { method: 'POST', body: JSON.stringify({ access_token: pendingToken, password }) });
+  pendingToken = null;
+  $('#new-password').value = '';
+  $('#new-password-2').value = '';
+  await enterPortal();
+});
+
+document.querySelectorAll('[data-goto]').forEach((link) => link.addEventListener('click', (event) => {
+  event.preventDefault();
+  if (link.dataset.goto === 'forgot') $('#forgot-email').value = $('#email').value;
+  showView(link.dataset.goto);
+}));
 
 $('#logout').addEventListener('click', (event) => act(event.currentTarget, 'Signing out', async () => {
   await api('/logout', { method: 'POST' });
-  showLogin();
+  await showLogin();
 }));
 
 // ---------- tabs ----------
@@ -421,7 +648,7 @@ async function loadTab(tab) {
   const panel = document.querySelector(`[data-panel="${tab}"]`);
   panel.classList.add('is-loading');
   try {
-    await ({ settings: loadSettings, prompt: loadPrompt, pages: loadPages, results: loadResults, environment: loadEnvironment })[tab]();
+    await ({ settings: loadSettings, prompt: loadPrompt, pages: loadPages, results: loadResults, environment: loadEnvironment, admins: loadAdmins })[tab]();
   } catch (error) {
     toast(error.message);
   } finally {
@@ -653,9 +880,97 @@ async function loadEnvironment() {
   $('#server').innerHTML = server.map((s) => `<div><code>${esc(s.name)}</code></div><div>${esc(s.value)}</div>`).join('');
 }
 
+// ---------- admins ----------
+const when = (value) => (value ? new Date(value).toLocaleString() : '—');
+
+async function loadAdmins() {
+  const body = $('#admins-body');
+  if (!body.children.length) body.innerHTML = loadingRow(5);
+  const data = await api('/admins');
+  $('#setup-notice').classList.toggle('hidden', !data.setup);
+  $('#accounts-notice').classList.toggle('hidden', data.accounts_ready);
+  $('#account-card').classList.toggle('hidden', data.setup);
+  $('#account-email').textContent = data.you || '';
+  $('#invite-button').disabled = !data.accounts_ready;
+  if (!data.admins.length) {
+    body.innerHTML = '<tr><td colspan="5" class="empty">No admins yet. Invite the first one above.</td></tr>';
+    return;
+  }
+  body.innerHTML = data.admins.map((a) => `
+    <tr>
+      <td class="loc">${esc(a.email)}${a.email === data.you ? ' <span class="chip">you</span>' : ''}</td>
+      <td><span class="chip ${a.status === 'active' ? '' : 'sev-high'}">${a.status === 'active' ? 'Active' : 'Invited'}</span></td>
+      <td class="muted">${esc(a.invited_by || '—')}</td>
+      <td class="muted" style="white-space:nowrap">${esc(when(a.last_login_at))}</td>
+      <td class="tight">
+        ${a.status === 'active' ? '' : `<button class="btn small" data-resend="${esc(a.email)}">Resend</button>`}
+        ${a.email === data.you ? '' : `<button class="btn small danger" data-remove="${esc(a.email)}">Remove</button>`}
+      </td>
+    </tr>`).join('');
+}
+
+$('#invite-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const email = $('#invite-email').value.trim();
+  act($('#invite-button'), 'Sending', async () => {
+    await api('/admins', { method: 'POST', body: JSON.stringify({ email }) });
+    $('#invite-email').value = '';
+    toast(`Invitation sent to ${email}`);
+    await loadAdmins();
+  });
+});
+
+$('#admins-body').addEventListener('click', (event) => {
+  const resend = event.target.closest('[data-resend]');
+  const remove = event.target.closest('[data-remove]');
+  if (resend) {
+    act(resend, 'Sending', async () => {
+      await api(`/admins/${encodeURIComponent(resend.dataset.resend)}/resend`, { method: 'POST' });
+      toast(`Email sent to ${resend.dataset.resend}`);
+    });
+  } else if (remove) {
+    if (!confirm(`Remove ${remove.dataset.remove}? They will lose access to this portal immediately.`)) return;
+    act(remove, 'Removing', async () => {
+      await api(`/admins/${encodeURIComponent(remove.dataset.remove)}`, { method: 'DELETE' });
+      toast(`${remove.dataset.remove} removed`);
+      await loadAdmins();
+    });
+  }
+});
+
+$('#password-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const next = $('#change-password').value;
+  if (next.length < passwordMin) { toast(`Use at least ${passwordMin} characters.`); return; }
+  if (next !== $('#change-password-2').value) { toast('The two new passwords do not match.'); return; }
+  act($('#password-button'), 'Saving', async () => {
+    await api('/account/password', { method: 'POST', body: JSON.stringify({ current_password: $('#current-password').value, new_password: next }) });
+    event.target.reset();
+    toast('Password changed');
+  });
+});
+
 // ---------- boot ----------
-// Signed in → portal; not signed in (or unreachable) → sign-in screen.
-api('/me').then(showApp).catch(showLogin);
+(function boot() {
+  // Arriving from an emailed link: Supabase puts the result in the URL fragment.
+  const fragment = new URLSearchParams(location.hash.replace(/^#/, ''));
+  if (fragment.get('access_token')) {
+    pendingToken = fragment.get('access_token');
+    history.replaceState(null, '', location.pathname); // keep the token out of the address bar
+    showLogin();
+    return;
+  }
+  if (fragment.get('error') || fragment.get('error_description')) {
+    const reason = (fragment.get('error_description') || 'That link did not work').replace(/\+/g, ' ');
+    history.replaceState(null, '', location.pathname);
+    showLogin(`${reason}. Ask for a new link.`);
+    return;
+  }
+  // Signed in → portal; not signed in (or unreachable) → sign-in screen.
+  api('/me').then(showApp).catch(() => {
+    if ($('#login').classList.contains('hidden')) showLogin();
+  });
+})();
 </script>
 </body>
 </html>
