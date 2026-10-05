@@ -7,16 +7,21 @@
 <title>Zawadie · Comment Moderation</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <style>
+  /* Brand colours come from the Zawadie logo: pink #E11D5B, green #29B77D,
+     yellow #EDB22D. --brand / --ok-fill / --warn-fill are the exact logo
+     colours (fills); --accent / --ok are the same hues adjusted so small
+     text stays readable on the page background. */
   :root {
     --bg: #ffffff; --ink: #0f1115; --text: #3d434d; --muted: #6b727d;
-    --line: #e3e5e8; --panel: #f7f8f9; --accent: #0b5cad;
-    --ok: #1a7f4b; --bad: #b42318; --warn: #9a6700;
+    --line: #e3e5e8; --panel: #f7f8f9;
+    --brand: #e11d5b; --on-brand: #ffffff; --accent: #c8134d;
+    --ok: #157a52; --ok-fill: #29b77d; --warn-fill: #edb22d; --bad: #b42318;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0e1013; --ink: #f2f3f5; --text: #b9bec6; --muted: #868d98;
-      --line: #23272e; --panel: #14171b; --accent: #6aa9e9;
-      --ok: #4cc38a; --bad: #f97066; --warn: #e2b53a;
+      --line: #23272e; --panel: #14171b;
+      --accent: #ff6b97; --ok: #3fcb92; --bad: #f97066;
     }
   }
   * { box-sizing: border-box; }
@@ -35,9 +40,9 @@
   .name img { display: block; width: 24px; height: 28px; }
 
   .right { display: flex; align-items: center; gap: 20px; }
-  .btn { display: inline-flex; align-items: center; height: 34px; padding: 0 14px; border: 1px solid var(--ink); border-radius: 6px;
-    background: var(--ink); color: var(--bg); font-size: 14px; font-weight: 600; text-decoration: none; }
-  .btn:hover { opacity: .88; }
+  .btn { display: inline-flex; align-items: center; height: 34px; padding: 0 14px; border: 1px solid var(--brand); border-radius: 6px;
+    background: var(--brand); color: var(--on-brand); font-size: 14px; font-weight: 600; text-decoration: none; }
+  .btn:hover { filter: brightness(.92); }
   .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   .status { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
@@ -50,12 +55,12 @@
   .figure b.loading::after { content: ""; position: absolute; left: 0; top: 7px; width: 54px; height: 18px; border-radius: 4px;
     background: var(--line); animation: blink 1.2s ease-in-out infinite; }
   @media (prefers-reduced-motion: reduce) { .status.checking i, .figure b.loading::after { animation: none; } }
-  .status.ok i { background: var(--ok); }
+  .status.ok i { background: var(--ok-fill); }
   .status.ok { color: var(--text); }
   .status.down i { background: var(--bad); }
 
   .intro { padding: 72px 0 56px; }
-  .eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 16px; }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin: 0 0 16px; }
   h1 { color: var(--ink); font-size: clamp(30px, 4.6vw, 44px); line-height: 1.12; letter-spacing: -.025em; font-weight: 650; margin: 0 0 18px; max-width: 17em; }
   .lead { font-size: 18px; max-width: 36em; margin: 0; }
 
@@ -78,14 +83,17 @@
   td.comment { color: var(--ink); }
   td.nowrap { white-space: nowrap; }
   .label { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 4px; border: 1px solid currentColor; }
-  .label.pos { color: var(--ok); }
+  .label.pos { color: var(--ok); border-color: var(--ok-fill); }
   .label.neg { color: var(--bad); }
   .label.neu { color: var(--muted); }
   .caption { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
 
   /* What it does: numbered, no icons. */
   .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; }
-  .feature { border-top: 1px solid var(--ink); padding-top: 14px; }
+  /* Each step is ruled in one of the three logo colours. */
+  .feature { border-top: 2px solid var(--warn-fill); padding-top: 14px; }
+  .feature:nth-child(2) { border-top-color: var(--brand); }
+  .feature:nth-child(3) { border-top-color: var(--ok-fill); }
   .feature .n { font-size: 12px; color: var(--muted); }
   .feature h3 { color: var(--ink); font-size: 16px; font-weight: 600; margin: 6px 0 6px; letter-spacing: -.005em; }
   .feature p { margin: 0; font-size: 14.5px; }

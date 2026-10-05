@@ -16,24 +16,30 @@
 <style>
   /* Same flat theme as the public landing page. Light is the default; dark
      applies when the device prefers it, unless the toggle has picked a theme. */
+  /* Brand colours come from the Zawadie logo: pink #E11D5B, green #29B77D,
+     yellow #EDB22D. --brand / --ok-fill / --warn-fill are the exact logo
+     colours (used for fills); --accent / --ok / --warn are the same hues
+     adjusted so small text stays readable on the page background. */
   :root {
     --bg: #ffffff; --ink: #0f1115; --text: #3d434d; --muted: #6b727d;
-    --line: #e3e5e8; --panel: #f7f8f9; --accent: #0b5cad;
-    --ok: #1a7f4b; --danger: #b42318; --warn: #9a6700;
+    --line: #e3e5e8; --panel: #f7f8f9;
+    --brand: #e11d5b; --on-brand: #ffffff; --accent: #c8134d;
+    --ok: #157a52; --ok-fill: #29b77d; --warn: #8a6100; --warn-fill: #edb22d;
+    --danger: #b42318;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #0e1013; --ink: #f2f3f5; --text: #b9bec6; --muted: #868d98;
-      --line: #23272e; --panel: #14171b; --accent: #6aa9e9;
-      --ok: #4cc38a; --danger: #f97066; --warn: #e2b53a;
+      --line: #23272e; --panel: #14171b;
+      --accent: #ff6b97; --ok: #3fcb92; --warn: #edb22d; --danger: #f97066;
       color-scheme: dark;
     }
   }
   :root[data-theme="dark"] {
     --bg: #0e1013; --ink: #f2f3f5; --text: #b9bec6; --muted: #868d98;
-    --line: #23272e; --panel: #14171b; --accent: #6aa9e9;
-    --ok: #4cc38a; --danger: #f97066; --warn: #e2b53a;
+    --line: #23272e; --panel: #14171b;
+    --accent: #ff6b97; --ok: #3fcb92; --warn: #edb22d; --danger: #f97066;
     color-scheme: dark;
   }
 
@@ -64,7 +70,7 @@
   /* Thin bar at the very top while any request is in flight. */
   #progress { position: fixed; top: 0; left: 0; right: 0; height: 2px; z-index: 20; overflow: hidden; opacity: 0; transition: opacity .15s; }
   #progress.on { opacity: 1; }
-  #progress::before { content: ""; position: absolute; top: 0; bottom: 0; width: 35%; background: var(--ink); animation: slide 1.1s ease-in-out infinite; }
+  #progress::before { content: ""; position: absolute; top: 0; bottom: 0; width: 35%; background: var(--brand); animation: slide 1.1s ease-in-out infinite; }
   @keyframes slide { from { left: -35%; } to { left: 100%; } }
 
   .spinner { display: inline-block; width: 13px; height: 13px; border: 2px solid currentColor; border-right-color: transparent;
@@ -86,7 +92,7 @@
   nav button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 14px 0 12px; color: var(--muted);
     font: inherit; font-weight: 500; cursor: pointer; white-space: nowrap; }
   nav button:hover { color: var(--ink); }
-  nav button.active { color: var(--ink); border-bottom-color: var(--ink); font-weight: 600; }
+  nav button.active { color: var(--ink); border-bottom-color: var(--brand); font-weight: 600; }
 
   main.wrap { padding-top: 32px; padding-bottom: 56px; }
   [data-panel].is-loading { opacity: .5; pointer-events: none; transition: opacity .15s; }
@@ -107,8 +113,8 @@
   button.btn:hover:not(:disabled) { border-color: var(--muted); }
   button.btn:disabled { opacity: .6; cursor: default; }
   button.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  button.primary { background: var(--ink); border-color: var(--ink); color: var(--bg); font-weight: 600; }
-  button.primary:hover:not(:disabled) { opacity: .88; }
+  button.primary { background: var(--brand); border-color: var(--brand); color: var(--on-brand); font-weight: 600; }
+  button.primary:hover:not(:disabled) { border-color: var(--brand); filter: brightness(.92); }
   button.danger { color: var(--danger); }
   button.small { height: 28px; padding: 0 10px; font-size: 12px; }
   .actions { display: flex; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
@@ -133,13 +139,14 @@
 
   .chip { display: inline-block; padding: 0 8px; border-radius: 4px; border: 1px solid var(--line); color: var(--text); font-size: 12px; font-weight: 500; white-space: nowrap; }
   .sev-critical { color: var(--danger); border-color: currentColor; }
-  .sev-high { color: var(--warn); border-color: currentColor; }
+  .sev-high { color: var(--warn); border-color: var(--warn-fill); }
+  .chip.good { color: var(--ok); border-color: var(--ok-fill); }
 
   .switch { position: relative; width: 36px; height: 20px; display: inline-block; vertical-align: middle; }
   .switch input { opacity: 0; width: 0; height: 0; }
   .switch span { position: absolute; inset: 0; background: var(--line); border-radius: 999px; cursor: pointer; transition: background .15s; }
   .switch span::before { content: ""; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform .15s; }
-  .switch input:checked + span { background: var(--ok); }
+  .switch input:checked + span { background: var(--ok-fill); }
   .switch input:checked + span::before { transform: translateX(16px); }
   .switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -152,7 +159,7 @@
   #boot { color: var(--muted); text-align: center; padding-top: 30vh; }
   .auth-error { color: var(--danger); min-height: 18px; }
   .center [data-view] > .hint { margin-top: 16px; }
-  section.notice { border-color: var(--accent); background: var(--panel); }
+  section.notice { border-color: var(--brand); background: var(--panel); }
   #whoami { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   @media (max-width: 640px) { #whoami { display: none; } }
 
@@ -899,7 +906,7 @@ async function loadAdmins() {
   body.innerHTML = data.admins.map((a) => `
     <tr>
       <td class="loc">${esc(a.email)}${a.email === data.you ? ' <span class="chip">you</span>' : ''}</td>
-      <td><span class="chip ${a.status === 'active' ? '' : 'sev-high'}">${a.status === 'active' ? 'Active' : 'Invited'}</span></td>
+      <td><span class="chip ${a.status === 'active' ? 'good' : 'sev-high'}">${a.status === 'active' ? 'Active' : 'Invited'}</span></td>
       <td class="muted">${esc(a.invited_by || '—')}</td>
       <td class="muted" style="white-space:nowrap">${esc(when(a.last_login_at))}</td>
       <td class="tight">
