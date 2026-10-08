@@ -10,6 +10,12 @@ from sqlalchemy.orm import Session
 from app.api.db.app_settings_ import load_runtime_settings
 from app.api.db.classified_comments_ import body_hash, load_classified, save_classified
 from app.api.db.db import get_db
+from app.api.db.fetch_state_ import (
+	load_page_cache,
+	meta_cooldown_until,
+	save_page_cache,
+	start_meta_cooldown,
+)
 from app.api.db.system_prompt_ import load_system_prompt
 from app.api.schema.pages_model import Page
 from app.core.settings import RuntimeSettings
@@ -26,7 +32,13 @@ from app.services.ai_classification import (
 	classify_comments,
 )
 from app.services.get_comments_ import get_all_comments_from_a_post, parse_meta_time
-from app.services.get_pages_ import MetaAPIError, MetaAPIRequestError, get_page
+from app.services.get_pages_ import (
+	MetaAPIError,
+	MetaAPIRequestError,
+	MetaAuthError,
+	MetaRateLimitError,
+	get_page,
+)
 from app.services.get_posts_ import get_page_posts
 from app.services.instagram_ import get_instagram_comments, get_instagram_media
 
@@ -37,6 +49,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 # Upper bound on posts read per page per run (newest first).
 MAX_POSTS_SCANNED = 100
+# Moderation and sentiment for a page share one Meta fetch for this long.
+FETCH_CACHE_TTL = timedelta(minutes=10)
+# After Meta reports a request limit, make no Meta calls for this long.
+RATE_LIMIT_COOLDOWN_MINUTES = 20
 SEVERITY_BY_CATEGORY = {
 	"threat": "critical",
 	"doxxing": "critical",
@@ -98,6 +114,8 @@ def _collect_instagram(
 					body=str(media.get("caption") or ""),
 				)
 		logger.info("Instagram media scanned: media=%d", len(media_items))
+	except MetaRateLimitError:
+		raise  # a request limit must pause everything, not be skipped
 	except MetaAPIError as error:
 		logger.warning("Instagram comments skipped for page %s: %s", page_id, error)
 
@@ -131,12 +149,19 @@ def _build_page_request(
 	posts_by_id: dict[str, PostContext] = {}
 	# (written at, comment, post id) for every comment inside the window.
 	recent: list[tuple[datetime, dict, str]] = []
+	quiet_posts = 0
 
 	for post_number, post in enumerate(posts_from_meta, start=1):
 		created_at = parse_meta_time(post.get("created_time"))
 		if post.get("id") is None or created_at is None:
 			continue
 		if not post_window_start <= created_at <= now:
+			continue
+		# A new comment moves the post's updated_time, so a post untouched since
+		# the comment window opened has nothing new: skip its comments request.
+		updated_at = parse_meta_time(post.get("updated_time"))
+		if updated_at is not None and updated_at < comment_window_start:
+			quiet_posts += 1
 			continue
 		post_id = str(post["id"])
 		new_comments = get_all_comments_from_a_post(
@@ -200,9 +225,10 @@ def _build_page_request(
 	posts = [post for post_id, post in posts_by_id.items() if post_id in used_post_ids]
 
 	logger.info(
-		"Meta comment collection completed: posts_scanned=%d posts_with_new_comments=%d "
-		"new_comments=%d instagram=%d",
+		"Meta comment collection completed: posts_scanned=%d quiet_posts_skipped=%d "
+		"posts_with_new_comments=%d new_comments=%d instagram=%d",
 		len(posts_from_meta),
+		quiet_posts,
 		len(posts),
 		len(comments),
 		sum(comment.platform == "instagram" for comment in comments),
@@ -281,12 +307,91 @@ def _classify_new_comments(
 	return results
 
 
+def _page_credentials(
+	database: Session, page_id: str, stored_page: Page | None, refresh: bool = False
+) -> tuple[str, str]:
+	"""Return (page name, page access token).
+
+	The token saved at import is used when there is one: it needs no extra
+	request, and its calls count against the page's own limit rather than the
+	small app-wide limit that user-token calls hit. With ``refresh`` (or no
+	saved token) a new one is fetched with the user token and saved.
+	"""
+	if stored_page is not None and stored_page.access_token and not refresh:
+		return stored_page.name, stored_page.access_token
+	user_token = _get_meta_access_token()
+	page = get_page(page_id, user_token)
+	page_token = str(page.get("access_token") or user_token)
+	if stored_page is not None:
+		stored_page.access_token = page_token
+		database.commit()
+		logger.info("Saved a fresh page token for %s", page_id)
+	return str(page.get("name") or page_id), page_token
+
+
+def _rate_limited(until: datetime) -> HTTPException:
+	return HTTPException(
+		status_code=429,
+		detail=f"Meta request limit reached; paused until {until:%H:%M} UTC",
+		headers={"Retry-After": str(max(int((until - datetime.now(timezone.utc)).total_seconds()), 1))},
+	)
+
+
+def collect_page_comments(
+	database: Session, page_id: str, stored_page: Page | None, settings: RuntimeSettings
+) -> ClassificationRequest | None:
+	"""Recent comments for a page, fetched from Meta at most once per few minutes.
+
+	Moderation and sentiment both call this for the same page back to back; the
+	second call reads the cached fetch. While Meta is rate-limiting us, no Meta
+	calls are made at all (HTTP 429) until the cooldown ends.
+	"""
+	instagram_id = instagram_id_for(stored_page)
+	signature = ":".join(
+		str(part)
+		for part in (
+			settings.lookback_days,
+			settings.post_lookback_days,
+			settings.max_comments_per_run,
+			instagram_id or "",
+		)
+	)
+	cached = load_page_cache(database, page_id, signature, FETCH_CACHE_TTL)
+	if cached is not None:
+		logger.info("Using cached Meta fetch for page %s", page_id)
+		return ClassificationRequest(**cached["request"]) if cached.get("request") else None
+
+	paused_until = meta_cooldown_until(database)
+	if paused_until is not None:
+		raise _rate_limited(paused_until)
+
+	try:
+		name, token = _page_credentials(database, page_id, stored_page)
+		try:
+			request = _build_page_request(page_id, name, token, settings, instagram_id=instagram_id)
+		except MetaAuthError:
+			if stored_page is None:
+				raise
+			# The saved token stopped working: get a new one, save it, try once more.
+			logger.warning("Saved page token for %s was rejected; refreshing it", page_id)
+			name, token = _page_credentials(database, page_id, stored_page, refresh=True)
+			request = _build_page_request(page_id, name, token, settings, instagram_id=instagram_id)
+	except MetaRateLimitError as error:
+		until = start_meta_cooldown(database, RATE_LIMIT_COOLDOWN_MINUTES)
+		logger.warning("Meta request limit reached (%s); pausing until %s", error, until)
+		raise _rate_limited(until) from error
+
+	save_page_cache(
+		database, page_id, signature, request.model_dump(mode="json") if request else None
+	)
+	return request
+
+
 @router.post("/classify/{page_id}", response_model=list[ClassificationResult])
 def classify_page(
 	page_id: str, database: Session = Depends(get_db)
 ) -> list[ClassificationResult]:
 	"""Fetch a page's content and classify comments not checked before."""
-	access_token = _get_meta_access_token()
 	stored_page = database.scalar(select(Page).where(Page.meta_page_id == page_id))
 	if stored_page is not None and not stored_page.is_active:
 		raise HTTPException(
@@ -295,21 +400,14 @@ def classify_page(
 		)
 	settings = load_runtime_settings(database)
 	try:
-		page = get_page(page_id, access_token)
-		page_name = str(page.get("name") or page_id)
-		page_access_token = str(page.get("access_token") or access_token)
-		request = _build_page_request(
-			page_id,
-			page_name,
-			page_access_token,
-			settings,
-			instagram_id=instagram_id_for(stored_page),
-		)
+		request = collect_page_comments(database, page_id, stored_page, settings)
 		if request is None:
 			return []
 		return _format_results(
 			_classify_new_comments(request, database, settings), request
 		)
+	except HTTPException:
+		raise  # e.g. 429 while Meta is rate-limiting
 	except MetaAPIRequestError as error:
 		logger.warning("Meta content request failed: %s", error)
 		raise HTTPException(

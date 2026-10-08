@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.db.db import get_db
+from app.api.routes import ai
 from app.api.routes.comments import comments
 from app.api.schema.ai_model import (
 	ClassificationRequest,
@@ -39,8 +40,11 @@ def _client(monkeypatch, classify) -> TestClient:
 	application.dependency_overrides[get_db] = lambda: _FakeSession()
 	monkeypatch.setenv("META_ACCESS_TOKEN", "user-token")
 	monkeypatch.setattr(comments, "load_runtime_settings", lambda _db: default_runtime_settings())
-	monkeypatch.setattr(comments, "get_page", lambda page_id, token: {"name": "Lilongwe", "access_token": "p"})
-	monkeypatch.setattr(comments, "_build_page_request", lambda *args, **kwargs: _request())
+	monkeypatch.setattr(ai, "get_page", lambda page_id, token: {"name": "Lilongwe", "access_token": "p"})
+	monkeypatch.setattr(ai, "_build_page_request", lambda *args, **kwargs: _request())
+	monkeypatch.setattr(ai, "load_page_cache", lambda *args: None)
+	monkeypatch.setattr(ai, "save_page_cache", lambda *args: None)
+	monkeypatch.setattr(ai, "meta_cooldown_until", lambda _db: None)
 	cached_row = SimpleNamespace(sentiment="neutral", confidence=0.9, reason="A question.")
 	monkeypatch.setattr(comments, "load_sentiments", lambda _db, _c: {"c_cached": cached_row})
 	monkeypatch.setattr(comments, "save_sentiments", lambda *args: None)

@@ -144,7 +144,10 @@ def test_import_reads_instagram_in_the_same_request_and_survives_missing_permiss
 
 def test_sentiment_route_includes_instagram_and_delete_uses_page_token(monkeypatch):
 	recent = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-	stored_page = SimpleNamespace(is_active=True, ig_user_id="ig_1", instagram_enabled=True)
+	stored_page = SimpleNamespace(
+		is_active=True, ig_user_id="ig_1", instagram_enabled=True,
+		name="Lilongwe", access_token="page-token",
+	)
 
 	class FakeSession:
 		def scalar(self, *_args, **_kwargs):
@@ -157,7 +160,9 @@ def test_sentiment_route_includes_instagram_and_delete_uses_page_token(monkeypat
 
 	monkeypatch.setenv("META_ACCESS_TOKEN", "user-token")
 	monkeypatch.setattr(comments, "load_runtime_settings", lambda _db: default_runtime_settings())
-	monkeypatch.setattr(comments, "get_page", lambda page_id, token: {"name": "Lilongwe", "access_token": "page-token"})
+	monkeypatch.setattr(ai, "load_page_cache", lambda *args: None)
+	monkeypatch.setattr(ai, "save_page_cache", lambda *args: None)
+	monkeypatch.setattr(ai, "meta_cooldown_until", lambda _db: None)
 	monkeypatch.setattr(comments, "load_sentiments", lambda _db, _c: {})
 	monkeypatch.setattr(comments, "save_sentiments", lambda *args: None)
 	monkeypatch.setattr(ai, "get_page_posts", lambda *args, **kwargs: [])

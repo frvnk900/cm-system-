@@ -11,7 +11,9 @@ from app.services.get_pages_ import (
 )
 
 
-POST_FIELDS = "id,message,created_time,permalink_url,full_picture,status_type"
+# updated_time moves whenever a post gets a new comment, so posts with no
+# recent activity can be skipped without fetching their comments.
+POST_FIELDS = "id,message,created_time,updated_time,permalink_url,full_picture,status_type"
 
 
 def get_page_posts(

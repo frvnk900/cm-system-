@@ -28,6 +28,10 @@ def _client(monkeypatch) -> TestClient:
 	monkeypatch.setattr(ai, "load_runtime_settings", lambda _db: default_runtime_settings())
 	monkeypatch.setattr(ai, "load_classified", lambda _db, _comments: {})
 	monkeypatch.setattr(ai, "load_system_prompt", lambda _db: "test prompt")
+	# No cached fetch and no rate-limit pause.
+	monkeypatch.setattr(ai, "load_page_cache", lambda *args: None)
+	monkeypatch.setattr(ai, "save_page_cache", lambda *args: None)
+	monkeypatch.setattr(ai, "meta_cooldown_until", lambda _db: None)
 	return TestClient(application)
 
 

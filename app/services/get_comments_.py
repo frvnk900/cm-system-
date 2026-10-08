@@ -9,6 +9,7 @@ from app.services.get_pages_ import (
 	META_MAX_PAGES,
 	MetaAPIError,
 	_graph_get,
+	meta_error,
 )
 from app.services.get_posts_ import get_page_posts
 
@@ -108,8 +109,5 @@ def delete_comment(comment_id: str, page_access_token: str) -> dict[str, Any]:
 		)
 		data = response.json()
 		if response.is_error or "error" in data:
-			message = data.get("error", {}).get("message", response.text)
-			raise MetaAPIError(
-				f"Meta Graph API error ({response.status_code}): {message}"
-			)
+			raise meta_error(response.status_code, data, response.text)
 		return data

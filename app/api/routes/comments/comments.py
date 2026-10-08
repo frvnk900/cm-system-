@@ -13,11 +13,7 @@ from app.api.db.page_access_ import (
 	get_all_page_access_tokens,
 	get_page_access_token,
 )
-from app.api.routes.ai import (
-	_build_page_request,
-	_get_meta_access_token,
-	instagram_id_for,
-)
+from app.api.routes.ai import collect_page_comments
 from app.api.schema.ai_model import CommentSentiment
 from app.api.schema.pages_model import Page
 from app.services.ai_classification import (
@@ -32,7 +28,12 @@ from app.services.get_comments_ import (
 	get_all_comments_from_page,
 	get_comment,
 )
-from app.services.get_pages_ import MetaAPIError, MetaAPIRequestError, get_page
+from app.services.get_pages_ import (
+	MetaAPIError,
+	MetaAPIRequestError,
+	MetaAuthError,
+	get_page,
+)
 
 
 router = APIRouter(prefix="/comments", tags=["comments"])
@@ -98,22 +99,13 @@ def list_page_comment_sentiment(
 	cached, so a comment is only sent to the AI once. Any returned comment can
 	be deleted with DELETE /comments/{comment_id}?page_id={page_id}.
 	"""
-	access_token = _get_meta_access_token()
 	stored_page = database.scalar(select(Page).where(Page.meta_page_id == page_id))
 	if stored_page is not None and not stored_page.is_active:
 		raise HTTPException(status_code=409, detail="This page is disabled in the admin portal")
 	settings = load_runtime_settings(database)
 	try:
-		page = get_page(page_id, access_token)
-		page_name = str(page.get("name") or page_id)
-		page_token = str(page.get("access_token") or access_token)
-		request = _build_page_request(
-			page_id,
-			page_name,
-			page_token,
-			settings,
-			instagram_id=instagram_id_for(stored_page),
-		)
+		# Shares one Meta fetch with the moderation check for the same page.
+		request = collect_page_comments(database, page_id, stored_page, settings)
 		if request is None:
 			return []
 
@@ -245,8 +237,17 @@ def remove_comment(
 	"""Delete one comment by its Meta comment id."""
 	try:
 		if page_id:
-			token = _fresh_page_token(page_id) or _get_tokens(database, page_id)[0]
-			return delete_comment(comment_id, token)
+			# Saved page token first (no extra request); a fresh one only if it was rejected.
+			saved_token = get_page_access_token(database, page_id)
+			if saved_token:
+				try:
+					return delete_comment(comment_id, saved_token)
+				except MetaAuthError as error:
+					logger.warning("Saved page token for %s was rejected: %s", page_id, error)
+			fresh_token = _fresh_page_token(page_id)
+			if not fresh_token:
+				raise HTTPException(status_code=404, detail="No working access token for this page")
+			return delete_comment(comment_id, fresh_token)
 		for page_access_token in _get_tokens(database, None):
 			try:
 				return delete_comment(comment_id, page_access_token)

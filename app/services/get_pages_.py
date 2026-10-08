@@ -25,6 +25,32 @@ class MetaAPIRequestError(MetaAPIError):
 	"""Raised when a Meta Graph API request cannot complete."""
 
 
+class MetaRateLimitError(MetaAPIError):
+	"""Meta refused the call because a request limit was reached."""
+
+
+class MetaAuthError(MetaAPIError):
+	"""The access token was rejected (expired, revoked or invalid)."""
+
+
+# Graph API error codes: 4 app limit, 17 user limit, 32 page limit, 613 custom
+# limit, 80000-80014 business-use-case limits (Pages, Instagram).
+RATE_LIMIT_CODES = {4, 17, 32, 613} | set(range(80000, 80015))
+AUTH_ERROR_CODES = {102, 190}
+
+
+def meta_error(status_code: int, payload: Any, fallback_text: str = "") -> MetaAPIError:
+	"""Build the right MetaAPIError subclass from a Graph API error response."""
+	error = payload.get("error", {}) if isinstance(payload, dict) else {}
+	message = f"Meta Graph API error ({status_code}): {error.get('message', fallback_text)}"
+	code = error.get("code")
+	if status_code == 429 or code in RATE_LIMIT_CODES:
+		return MetaRateLimitError(message)
+	if code in AUTH_ERROR_CODES:
+		return MetaAuthError(message)
+	return MetaAPIError(message)
+
+
 def _graph_get(client: httpx.Client, url: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
 	try:
 		response = client.get(url, params=params)
@@ -35,8 +61,7 @@ def _graph_get(client: httpx.Client, url: str, params: dict[str, Any] | None = N
 
 	data = response.json()
 	if response.is_error or "error" in data:
-		message = data.get("error", {}).get("message", response.text)
-		raise MetaAPIError(f"Meta Graph API error ({response.status_code}): {message}")
+		raise meta_error(response.status_code, data, response.text)
 	return data
 
 
